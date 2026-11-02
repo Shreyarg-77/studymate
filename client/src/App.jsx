@@ -1,8 +1,22 @@
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import Layout from './components/Layout'
+import Tasks from './pages/Tasks'
+import Timetable from './pages/Timetable'
+import Pomodoro from './pages/Pomodoro'
+import Notes from './pages/Notes'
+
 function App() {
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <h1 className="text-3xl font-bold text-indigo-600">StudyMate is alive</h1>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Tasks />} />
+          <Route path="/timetable" element={<Timetable />} />
+          <Route path="/pomodoro" element={<Pomodoro />} />
+          <Route path="/notes" element={<Notes />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   )
 }
 
