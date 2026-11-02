@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
+import Subjects from './pages/Subjects'
 import Tasks from './pages/Tasks'
 import Timetable from './pages/Timetable'
 import Pomodoro from './pages/Pomodoro'
@@ -10,6 +11,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
+          <Route path="/subjects" element={<Subjects />} />
           <Route path="/" element={<Tasks />} />
           <Route path="/timetable" element={<Timetable />} />
           <Route path="/pomodoro" element={<Pomodoro />} />
