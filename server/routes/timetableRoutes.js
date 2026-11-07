@@ -1,8 +1,8 @@
 import { Router } from "express";
 import TimetableEntry from "../models/TimetableEntry.js";
-import Subject from "../models/Subject.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import httpError from "../utils/httpError.js";
+import { assertOwnsSubject } from "../utils/ownership.js";
 
 const router = Router();
 
@@ -19,7 +19,12 @@ const DAY_NAMES = [
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    res.json(await TimetableEntry.find().sort({ day: 1, start: 1 }));
+    res.json(
+      await TimetableEntry.find({ user: req.user._id }).sort({
+        day: 1,
+        start: 1,
+      }),
+    );
   }),
 );
 
@@ -42,12 +47,11 @@ router.post(
     if (!start || !end || end <= start) {
       throw httpError(400, "End time must be after start time");
     }
-    if (!(await Subject.exists({ _id: subject }))) {
-      throw httpError(404, "Subject not found");
-    }
+    await assertOwnsSubject(subject, req.user._id);
 
     for (const day of uniqueDays) {
       const clash = await TimetableEntry.findOne({
+        user: req.user._id,
         day,
         start: { $lt: end },
         end: { $gt: start },
@@ -62,7 +66,14 @@ router.post(
     }
 
     const entries = await TimetableEntry.insertMany(
-      uniqueDays.map((day) => ({ subject, day, start, end, room })),
+      uniqueDays.map((day) => ({
+        user: req.user._id,
+        subject,
+        day,
+        start,
+        end,
+        room,
+      })),
     );
     res.status(201).json(entries);
   }),
@@ -71,7 +82,10 @@ router.post(
 router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
-    const entry = await TimetableEntry.findByIdAndDelete(req.params.id);
+    const entry = await TimetableEntry.findOneAndDelete({
+      _id: req.params.id,
+      user: req.user._id,
+    });
     if (!entry) return res.status(404).json({ message: "Class not found" });
     res.json({ message: "Class deleted" });
   }),

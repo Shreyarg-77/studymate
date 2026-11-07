@@ -10,7 +10,7 @@ const router = Router();
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    res.json(await Subject.find().sort({ createdAt: 1 }));
+    res.json(await Subject.find({ user: req.user._id }).sort({ createdAt: 1 }));
   }),
 );
 
@@ -18,7 +18,12 @@ router.post(
   "/",
   asyncHandler(async (req, res) => {
     const { name, type, color } = req.body;
-    const subject = await Subject.create({ name, type, color });
+    const subject = await Subject.create({
+      user: req.user._id,
+      name,
+      type,
+      color,
+    });
     res.status(201).json(subject);
   }),
 );
@@ -26,12 +31,18 @@ router.post(
 router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
-    const subject = await Subject.findByIdAndDelete(req.params.id);
+    const subject = await Subject.findOneAndDelete({
+      _id: req.params.id,
+      user: req.user._id,
+    });
     if (!subject) return res.status(404).json({ message: "Subject not found" });
-    await Task.deleteMany({ subject: subject._id });
-    await TimetableEntry.deleteMany({ subject: subject._id });
+    await Task.deleteMany({ subject: subject._id, user: req.user._id });
+    await TimetableEntry.deleteMany({
+      subject: subject._id,
+      user: req.user._id,
+    });
     await Note.updateMany(
-      { subject: subject._id },
+      { subject: subject._id, user: req.user._id },
       { subject: null, task: null },
     );
     res.json({ message: "Subject and its related data deleted" });

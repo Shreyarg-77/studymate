@@ -4,6 +4,12 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const timetableSchema = new mongoose.Schema(
   {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
     subject: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Subject",

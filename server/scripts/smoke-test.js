@@ -199,6 +199,67 @@ async function run() {
     r.status === 200 && r.data[0]?._id === noteId,
   );
 
+  section("Data isolation (second user)");
+  const firstToken = token;
+
+  token = "";
+  r = await call("GET", "/subjects");
+  check("subjects without a token returns 401", r.status === 401);
+
+  r = await call("POST", "/auth/register", {
+    name: "Other User",
+    email: `other${Date.now()}@example.com`,
+    password: "secret123",
+  });
+  token = r.data?.token || "";
+
+  r = await call("GET", "/subjects");
+  check(
+    "second user sees no subjects",
+    r.status === 200 && r.data.length === 0,
+  );
+
+  r = await call("GET", "/timetable");
+  check(
+    "second user sees no timetable",
+    r.status === 200 && r.data.length === 0,
+  );
+
+  r = await call("GET", "/notes");
+  check("second user sees no notes", r.status === 200 && r.data.length === 0);
+
+  r = await call("DELETE", `/subjects/${subjectId}`);
+  check("second user cannot delete first user's subject", r.status === 404);
+
+  r = await call("PUT", `/notes/${noteId}`, { title: "Hacked" });
+  check("second user cannot edit first user's note", r.status === 404);
+
+  r = await call("POST", "/timetable", {
+    subject: subjectId,
+    days: [1],
+    start: "08:00",
+    end: "09:00",
+  });
+  check("second user cannot use first user's subject", r.status === 404);
+
+  r = await call("POST", "/tasks", {
+    title: "Sneaky task",
+    subject: subjectId,
+  });
+  check(
+    "second user cannot create a task under first user's subject",
+    r.status === 404,
+  );
+
+  token = firstToken;
+
+  r = await call("GET", "/notes");
+  check(
+    "first user's note is unchanged",
+    r.status === 200 &&
+      r.data.some((n) => n._id === noteId && n.title === "Optics"),
+  );
+
   section("Cleanup and cascade");
   r = await call("DELETE", `/subjects/${subjectId}`);
   check("delete subject returns 200", r.status === 200);
