@@ -4,7 +4,8 @@ import useLocalStorage from "../hooks/useLocalStorage";
 
 const DEFAULTS = { focus: 25, short: 5, long: 15, longEvery: 4 };
 const LIMITS = { focus: [1, 180], short: [1, 60], long: [1, 60] };
-const STEPS = { focus: 5, short: 1, long: 5 };
+const STEP_DOWN = 10;
+const STEP_UP = 15;
 
 const MODES = [
   { key: "focus", label: "Focus" },
@@ -250,17 +251,17 @@ function Pomodoro() {
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
-                onClick={() => setDuration(settings[mode] - STEPS[mode])}
+                onClick={() => setDuration(settings[mode] - STEP_DOWN)}
                 className={stepButton}
               >
-                −{STEPS[mode]}
+                −{STEP_DOWN}
               </button>
               <button
                 type="button"
-                onClick={() => setDuration(settings[mode] + STEPS[mode])}
+                onClick={() => setDuration(settings[mode] + STEP_UP)}
                 className={stepButton}
               >
-                +{STEPS[mode]}
+                +{STEP_UP}
               </button>
             </div>
           )}
