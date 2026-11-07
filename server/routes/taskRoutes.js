@@ -1,6 +1,7 @@
 import { Router } from "express";
 import Task from "../models/Task.js";
 import asyncHandler from "../utils/asyncHandler.js";
+import Note from "../models/Note.js";
 
 const router = Router();
 
@@ -56,6 +57,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const task = await Task.findByIdAndDelete(req.params.id);
     if (!task) return res.status(404).json({ message: "Task not found" });
+    await Note.updateMany({ task: task._id }, { task: null });
     res.json({ message: "Task deleted" });
   }),
 );

@@ -2,6 +2,8 @@ import { Router } from "express";
 import Subject from "../models/Subject.js";
 import Task from "../models/Task.js";
 import asyncHandler from "../utils/asyncHandler.js";
+import TimetableEntry from "../models/TimetableEntry.js";
+import Note from "../models/Note.js";
 
 const router = Router();
 
@@ -27,8 +29,12 @@ router.delete(
     const subject = await Subject.findByIdAndDelete(req.params.id);
     if (!subject) return res.status(404).json({ message: "Subject not found" });
     await Task.deleteMany({ subject: subject._id });
-    res.json({ message: "Subject and its tasks deleted" });
+    await TimetableEntry.deleteMany({ subject: subject._id });
+    await Note.updateMany(
+      { subject: subject._id },
+      { subject: null, task: null },
+    );
+    res.json({ message: "Subject and its related data deleted" });
   }),
 );
-
 export default router;

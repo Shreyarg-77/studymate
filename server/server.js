@@ -4,6 +4,8 @@ import cors from "cors";
 import connectDB from "./config/db.js";
 import subjectRoutes from "./routes/subjectRoutes.js";
 import taskRoutes from "./routes/taskRoutes.js";
+import timetableRoutes from "./routes/timetableRoutes.js";
+import noteRoutes from "./routes/noteRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -16,6 +18,8 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/subjects", subjectRoutes);
 app.use("/api/tasks", taskRoutes);
+app.use("/api/timetable", timetableRoutes);
+app.use("/api/notes", noteRoutes);
 
 app.use(errorHandler);
 
