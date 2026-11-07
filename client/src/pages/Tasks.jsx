@@ -145,6 +145,7 @@ function Tasks() {
     setTasks(
       tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
     );
+    if (editingId === id) resetForm();
   }
 
   function deleteTask(id) {
@@ -208,12 +209,14 @@ function Tasks() {
           </div>
         </div>
         <div className="flex gap-3">
-          <button
-            onClick={() => startEdit(task)}
-            className="text-sm text-indigo-600 hover:text-indigo-800"
-          >
-            Edit
-          </button>
+          {!task.completed && (
+            <button
+              onClick={() => startEdit(task)}
+              className="text-sm text-indigo-600 hover:text-indigo-800"
+            >
+              Edit
+            </button>
+          )}
           <button
             onClick={() => deleteTask(task.id)}
             className="text-sm text-red-500 hover:text-red-700"

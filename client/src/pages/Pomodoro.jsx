@@ -3,6 +3,8 @@ import { isToday, parseISO } from "date-fns";
 import useLocalStorage from "../hooks/useLocalStorage";
 
 const DEFAULTS = { focus: 25, short: 5, long: 15, longEvery: 4 };
+const LIMITS = { focus: [1, 180], short: [1, 60], long: [1, 60] };
+const STEPS = { focus: 5, short: 1, long: 5 };
 
 const MODES = [
   { key: "focus", label: "Focus" },
@@ -56,6 +58,8 @@ function Pomodoro() {
   const [now, setNow] = useState(() => Date.now());
   const [cycle, setCycle] = useState(0);
   const [taskId, setTaskId] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
 
   const msLeft = running ? Math.max(endTime - now, 0) : remainingMs;
   const totalMs = settings[mode] * 60000;
@@ -68,6 +72,7 @@ function Pomodoro() {
       setMode(next);
       setRunning(false);
       setEndTime(null);
+      setEditing(false);
       setRemainingMs(settings[next] * 60000);
     },
     [settings],
@@ -137,10 +142,26 @@ function Pomodoro() {
     setRemainingMs(settings[mode] * 60000);
   }
 
-  function updateSetting(key, value) {
-    const next = { ...settings, [key]: Number(value) };
-    setSettings(next);
-    if (!running && key === mode) setRemainingMs(next[key] * 60000);
+  function setDuration(value) {
+    if (running) return;
+    const [min, max] = LIMITS[mode];
+    const minutes = Math.min(
+      Math.max(Math.round(Number(value)) || settings[mode], min),
+      max,
+    );
+    setSettings({ ...settings, [mode]: minutes });
+    setRemainingMs(minutes * 60000);
+  }
+
+  function startEditing() {
+    if (running) return;
+    setDraft(String(settings[mode]));
+    setEditing(true);
+  }
+
+  function commitEditing() {
+    setDuration(draft);
+    setEditing(false);
   }
 
   const incompleteTasks = tasks.filter((t) => !t.completed);
@@ -149,8 +170,8 @@ function Pomodoro() {
   );
   const todayMinutes = todaySessions.reduce((sum, s) => sum + s.minutes, 0);
 
-  const selectClass =
-    "rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-500 disabled:opacity-50";
+  const stepButton =
+    "rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100";
 
   return (
     <div className="mx-auto max-w-md text-center">
@@ -172,7 +193,7 @@ function Pomodoro() {
         ))}
       </div>
 
-      <div className={`relative mx-auto mb-6 h-64 w-64 ${MODE_COLOR[mode]}`}>
+      <div className={`relative mx-auto mb-3 h-64 w-64 ${MODE_COLOR[mode]}`}>
         <svg viewBox="0 0 200 200" className="h-full w-full -rotate-90">
           <circle
             cx="100"
@@ -194,10 +215,62 @@ function Pomodoro() {
             strokeDashoffset={CIRC * (1 - msLeft / totalMs)}
           />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-5xl font-bold text-slate-900">{timeText}</span>
+
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          {editing ? (
+            <div className="flex items-baseline gap-1">
+              <input
+                type="number"
+                autoFocus
+                min={LIMITS[mode][0]}
+                max={LIMITS[mode][1]}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commitEditing}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitEditing();
+                }}
+                className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-4xl font-bold text-slate-900 outline-none focus:border-indigo-500"
+              />
+              <span className="text-sm text-slate-500">min</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={startEditing}
+              disabled={running}
+              title={running ? "" : "Click to change the time"}
+              className="text-5xl font-bold text-slate-900 enabled:hover:text-indigo-600 disabled:cursor-default"
+            >
+              {timeText}
+            </button>
+          )}
+
+          {!running && !editing && (
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDuration(settings[mode] - STEPS[mode])}
+                className={stepButton}
+              >
+                −{STEPS[mode]}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDuration(settings[mode] + STEPS[mode])}
+                className={stepButton}
+              >
+                +{STEPS[mode]}
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      <p className="mb-6 text-xs text-slate-400">
+        Tap the time to type your own minutes, or use −/+. Each mode remembers
+        its own length.
+      </p>
 
       <div className="mb-6 flex justify-center gap-3">
         {running ? (
@@ -230,7 +303,7 @@ function Pomodoro() {
         <select
           value={taskId}
           onChange={(e) => setTaskId(e.target.value)}
-          className={`${selectClass} w-full`}
+          className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
         >
           <option value="">No task selected</option>
           {incompleteTasks.map((t) => (
@@ -241,64 +314,13 @@ function Pomodoro() {
         </select>
       </div>
 
-      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-left">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 text-left">
         <p className="text-sm text-slate-500">Today</p>
         <p className="text-lg font-bold">
           {todaySessions.length} session{todaySessions.length === 1 ? "" : "s"}{" "}
           · {todayMinutes} min focused
         </p>
       </div>
-
-      <div className="grid grid-cols-3 gap-3 text-left">
-        <label className="text-xs font-medium text-slate-500">
-          Focus (min)
-          <select
-            value={settings.focus}
-            onChange={(e) => updateSetting("focus", e.target.value)}
-            disabled={running}
-            className={`${selectClass} mt-1 w-full`}
-          >
-            {[1, 15, 20, 25, 30, 45, 50, 60].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-medium text-slate-500">
-          Short break
-          <select
-            value={settings.short}
-            onChange={(e) => updateSetting("short", e.target.value)}
-            disabled={running}
-            className={`${selectClass} mt-1 w-full`}
-          >
-            {[1, 3, 5, 10].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-medium text-slate-500">
-          Long break
-          <select
-            value={settings.long}
-            onChange={(e) => updateSetting("long", e.target.value)}
-            disabled={running}
-            className={`${selectClass} mt-1 w-full`}
-          >
-            {[10, 15, 20, 30].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <p className="mt-2 text-left text-xs text-slate-400">
-        Tip: set Focus to 1 minute to test the full cycle quickly.
-      </p>
     </div>
   );
 }
