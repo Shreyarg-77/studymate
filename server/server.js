@@ -2,11 +2,17 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import connectDB from "./config/db.js";
+import authRoutes from "./routes/authRoutes.js";
 import subjectRoutes from "./routes/subjectRoutes.js";
 import taskRoutes from "./routes/taskRoutes.js";
 import timetableRoutes from "./routes/timetableRoutes.js";
 import noteRoutes from "./routes/noteRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 20) {
+  console.error("JWT_SECRET is missing or too short in server/.env");
+  process.exit(1);
+}
 
 const app = express();
 app.use(cors());
@@ -16,6 +22,7 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", app: "StudyMate API" });
 });
 
+app.use("/api/auth", authRoutes);
 app.use("/api/subjects", subjectRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/timetable", timetableRoutes);

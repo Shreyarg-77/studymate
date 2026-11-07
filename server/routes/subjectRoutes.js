@@ -1,9 +1,9 @@
 import { Router } from "express";
 import Subject from "../models/Subject.js";
 import Task from "../models/Task.js";
-import asyncHandler from "../utils/asyncHandler.js";
 import TimetableEntry from "../models/TimetableEntry.js";
 import Note from "../models/Note.js";
+import asyncHandler from "../utils/asyncHandler.js";
 
 const router = Router();
 
@@ -37,4 +37,5 @@ router.delete(
     res.json({ message: "Subject and its related data deleted" });
   }),
 );
+
 export default router;
