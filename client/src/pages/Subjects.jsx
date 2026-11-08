@@ -1,36 +1,65 @@
-import { useState } from 'react'
-import useLocalStorage from '../hooks/useLocalStorage'
-
-const COLORS = ['#4F46E5', '#14B8A6', '#F59E0B', '#EF4444', '#EC4899', '#22C55E', '#0EA5E9', '#8B5CF6']
+import { useState } from "react";
+import { useData } from "../context/DataContext";
+import { errorMessage } from "../api/client";
 
 function Subjects() {
-  const [subjects, setSubjects] = useLocalStorage('studymate-subjects', [])
-  const [name, setName] = useState('')
-  const [type, setType] = useState('theory')
+  const { subjects, loading, loadError, addSubject, deleteSubject } = useData();
+  const [name, setName] = useState("");
+  const [type, setType] = useState("theory");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  function addSubject(e) {
-    e.preventDefault()
-    if (!name.trim()) return
-    const color = COLORS[subjects.length % COLORS.length]
-    setSubjects([...subjects, { id: Date.now(), name: name.trim(), type, color }])
-    setName('')
+  async function handleAdd(e) {
+    e.preventDefault();
+    const clean = name.trim();
+    if (!clean) return;
+    if (subjects.some((s) => s.name.toLowerCase() === clean.toLowerCase())) {
+      setError("That subject already exists.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await addSubject({ name: clean, type });
+      setName("");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function deleteSubject(id) {
-    setSubjects(subjects.filter((s) => s.id !== id))
+  async function handleDelete(subject) {
+    const ok = window.confirm(
+      `Delete ${subject.name}? Its tasks and classes will be deleted too.`,
+    );
+    if (!ok) return;
+    setError("");
+    try {
+      await deleteSubject(subject._id);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
-  const theoryCount = subjects.filter((s) => s.type === 'theory').length
-  const practicalCount = subjects.length - theoryCount
+  if (loading) return <p className="text-sm text-slate-500">Loading...</p>;
+  if (loadError) return <p className="text-sm text-red-600">{loadError}</p>;
+
+  const theoryCount = subjects.filter((s) => s.type === "theory").length;
+  const practicalCount = subjects.length - theoryCount;
 
   return (
     <div className="mx-auto max-w-2xl">
       <h2 className="mb-1 text-2xl font-bold">Subjects</h2>
       <p className="mb-4 text-sm text-slate-500">
-        {subjects.length} subjects: {theoryCount} theory, {practicalCount} practical
+        {subjects.length} subjects: {theoryCount} theory, {practicalCount}{" "}
+        practical
       </p>
 
-      <form onSubmit={addSubject} className="mb-6 flex flex-col gap-2 sm:flex-row">
+      <form
+        onSubmit={handleAdd}
+        className="mb-2 flex flex-col gap-2 sm:flex-row"
+      >
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -47,28 +76,36 @@ function Subjects() {
         </select>
         <button
           type="submit"
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          disabled={busy}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
         >
           Add
         </button>
       </form>
 
+      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
       {subjects.length === 0 ? (
-        <p className="text-sm text-slate-500">No subjects yet. Add the ones from your timetable.</p>
+        <p className="mt-4 text-sm text-slate-500">
+          No subjects yet. Add the ones from your timetable.
+        </p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul className="mt-4 flex flex-col gap-2">
           {subjects.map((s) => (
             <li
-              key={s.id}
+              key={s._id}
               className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3"
             >
-              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: s.color }} />
+              <span
+                className="h-3 w-3 rounded-full"
+                style={{ backgroundColor: s.color }}
+              />
               <span className="flex-1 font-medium">{s.name}</span>
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600">
                 {s.type}
               </span>
               <button
-                onClick={() => deleteSubject(s.id)}
+                onClick={() => handleDelete(s)}
                 className="text-sm text-red-500 hover:text-red-700"
               >
                 Delete
@@ -78,7 +115,7 @@ function Subjects() {
         </ul>
       )}
     </div>
-  )
+  );
 }
 
-export default Subjects
+export default Subjects;

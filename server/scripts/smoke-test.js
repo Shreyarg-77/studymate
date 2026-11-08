@@ -199,6 +199,22 @@ async function run() {
     r.status === 200 && r.data[0]?._id === noteId,
   );
 
+  section("Pomodoro");
+  r = await call("POST", "/tasks", { title: "Focus task", subject: subjectId });
+  const focusTaskId = r.data?._id;
+
+  r = await call("POST", "/pomodoro", { task: focusTaskId, minutes: 25 });
+  check(
+    "log a focus session returns 201",
+    r.status === 201 && r.data?.minutes === 25,
+  );
+
+  r = await call("POST", "/pomodoro", { minutes: 0 });
+  check("0 minutes returns 400", r.status === 400);
+
+  r = await call("GET", "/pomodoro");
+  check("session appears in the list", r.status === 200 && r.data.length === 1);
+
   section("Data isolation (second user)");
   const firstToken = token;
 
@@ -248,6 +264,12 @@ async function run() {
   });
   check(
     "second user cannot create a task under first user's subject",
+    r.status === 404,
+  );
+
+  r = await call("POST", "/pomodoro", { task: focusTaskId, minutes: 25 });
+  check(
+    "second user cannot log a session on first user's task",
     r.status === 404,
   );
 
