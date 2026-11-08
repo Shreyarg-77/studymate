@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
-import useLocalStorage from "../hooks/useLocalStorage";
+import { useData } from "../context/DataContext";
+import { errorMessage } from "../api/client";
 
 const CATEGORIES_BY_TYPE = {
   theory: ["Assignment", "Tutorial", "Homework"],
@@ -62,8 +63,15 @@ function dueLabel(task) {
 }
 
 function Tasks() {
-  const [tasks, setTasks] = useLocalStorage("studymate-tasks-v2", []);
-  const [subjects] = useLocalStorage("studymate-subjects", []);
+  const {
+    tasks,
+    subjects,
+    loading,
+    loadError,
+    addTask,
+    updateTask,
+    deleteTask,
+  } = useData();
 
   const [subjectId, setSubjectId] = useState("");
   const [category, setCategory] = useState("");
@@ -71,12 +79,14 @@ function Tasks() {
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("Medium");
   const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const [filterSubject, setFilterSubject] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [showCompleted, setShowCompleted] = useState(true);
 
-  const selectedSubject = subjects.find((s) => String(s.id) === subjectId);
+  const selectedSubject = subjects.find((s) => s._id === subjectId);
   const categoryOptions = selectedSubject
     ? CATEGORIES_BY_TYPE[selectedSubject.type]
     : [];
@@ -84,7 +94,7 @@ function Tasks() {
   function handleSubjectChange(e) {
     const id = e.target.value;
     setSubjectId(id);
-    const subject = subjects.find((s) => String(s.id) === id);
+    const subject = subjects.find((s) => s._id === id);
     setCategory(subject ? CATEGORIES_BY_TYPE[subject.type][0] : "");
   }
 
@@ -96,65 +106,67 @@ function Tasks() {
   }
 
   function startEdit(task) {
-    setEditingId(task.id);
-    setSubjectId(String(task.subjectId));
+    setEditingId(task._id);
+    setSubjectId(task.subject);
     setCategory(task.category);
     setTitle(task.title);
     setDueDate(task.dueDate);
     setPriority(task.priority);
+    setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function addTask(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (!subjectId || !title.trim()) return;
-
-    if (editingId) {
-      setTasks(
-        tasks.map((t) =>
-          t.id === editingId
-            ? {
-                ...t,
-                title: title.trim(),
-                subjectId: Number(subjectId),
-                category,
-                dueDate,
-                priority,
-              }
-            : t,
-        ),
-      );
-    } else {
-      setTasks([
-        {
-          id: Date.now(),
-          title: title.trim(),
-          subjectId: Number(subjectId),
-          category,
-          dueDate,
-          priority,
-          completed: false,
-        },
-        ...tasks,
-      ]);
+    if (!subjectId || !title.trim()) {
+      setError("Choose a subject and enter a title.");
+      return;
     }
-    resetForm();
+    const data = {
+      title: title.trim(),
+      subject: subjectId,
+      category,
+      dueDate,
+      priority,
+    };
+    setSaving(true);
+    setError("");
+    try {
+      if (editingId) await updateTask(editingId, data);
+      else await addTask(data);
+      resetForm();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function toggleTask(id) {
-    setTasks(
-      tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
-    );
-    if (editingId === id) resetForm();
+  async function toggleTask(task) {
+    setError("");
+    try {
+      await updateTask(task._id, { completed: !task.completed });
+      if (editingId === task._id) resetForm();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
-  function deleteTask(id) {
-    setTasks(tasks.filter((t) => t.id !== id));
-    if (editingId === id) resetForm();
+  async function handleDelete(task) {
+    setError("");
+    try {
+      await deleteTask(task._id);
+      if (editingId === task._id) resetForm();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
+
+  if (loading) return <p className="text-sm text-slate-500">Loading...</p>;
+  if (loadError) return <p className="text-sm text-red-600">{loadError}</p>;
 
   const visibleTasks = tasks
-    .filter((t) => !filterSubject || String(t.subjectId) === filterSubject)
+    .filter((t) => !filterSubject || t.subject === filterSubject)
     .filter((t) => !filterCategory || t.category === filterCategory)
     .filter((t) => showCompleted || !t.completed)
     .sort((a, b) => getScore(b) - getScore(a));
@@ -168,17 +180,17 @@ function Tasks() {
     "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500";
 
   function renderTask(task) {
-    const subject = subjects.find((s) => s.id === task.subjectId);
+    const subject = subjects.find((s) => s._id === task.subject);
     const due = dueLabel(task);
     return (
       <li
-        key={task.id}
+        key={task._id}
         className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3"
       >
         <input
           type="checkbox"
           checked={task.completed}
-          onChange={() => toggleTask(task.id)}
+          onChange={() => toggleTask(task)}
           className="h-4 w-4"
         />
         <div className="flex-1">
@@ -218,7 +230,7 @@ function Tasks() {
             </button>
           )}
           <button
-            onClick={() => deleteTask(task.id)}
+            onClick={() => handleDelete(task)}
             className="text-sm text-red-500 hover:text-red-700"
           >
             Delete
@@ -241,7 +253,10 @@ function Tasks() {
           </Link>
         </div>
       ) : (
-        <form onSubmit={addTask} className="mb-6 grid gap-2 sm:grid-cols-2">
+        <form
+          onSubmit={handleSubmit}
+          className="mb-4 grid gap-2 sm:grid-cols-2"
+        >
           <select
             value={subjectId}
             onChange={handleSubjectChange}
@@ -249,7 +264,7 @@ function Tasks() {
           >
             <option value="">Select subject</option>
             {subjects.map((s) => (
-              <option key={s.id} value={s.id}>
+              <option key={s._id} value={s._id}>
                 {s.name} ({s.type})
               </option>
             ))}
@@ -296,9 +311,10 @@ function Tasks() {
           <div className="flex gap-2 sm:col-span-2">
             <button
               type="submit"
-              className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              disabled={saving}
+              className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
             >
-              {editingId ? "Save changes" : "Add task"}
+              {saving ? "Saving..." : editingId ? "Save changes" : "Add task"}
             </button>
             {editingId && (
               <button
@@ -313,6 +329,8 @@ function Tasks() {
         </form>
       )}
 
+      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
       {tasks.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <select
@@ -322,7 +340,7 @@ function Tasks() {
           >
             <option value="">All subjects</option>
             {subjects.map((s) => (
-              <option key={s.id} value={s.id}>
+              <option key={s._id} value={s._id}>
                 {s.name}
               </option>
             ))}

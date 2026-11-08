@@ -48,6 +48,8 @@ export function DataProvider({ children }) {
     };
   }, []);
 
+  /* ---------- subjects ---------- */
+
   async function addSubject({ name, type }) {
     const color = COLORS[subjects.length % COLORS.length];
     const res = await api.post("/subjects", { name, type, color });
@@ -67,6 +69,8 @@ export function DataProvider({ children }) {
     );
   }
 
+  /* ---------- timetable ---------- */
+
   async function addClasses({ subject, days, start, end, room }) {
     const res = await api.post("/timetable", {
       subject,
@@ -83,6 +87,55 @@ export function DataProvider({ children }) {
     setTimetable((prev) => prev.filter((e) => e._id !== id));
   }
 
+  /* ---------- tasks ---------- */
+
+  async function addTask(data) {
+    const res = await api.post("/tasks", data);
+    setTasks((prev) => [res.data, ...prev]);
+    return res.data;
+  }
+
+  async function updateTask(id, changes) {
+    const res = await api.put(`/tasks/${id}`, changes);
+    setTasks((prev) => prev.map((t) => (t._id === id ? res.data : t)));
+    return res.data;
+  }
+
+  async function deleteTask(id) {
+    await api.delete(`/tasks/${id}`);
+    setTasks((prev) => prev.filter((t) => t._id !== id));
+    setNotes((prev) =>
+      prev.map((n) => (n.task === id ? { ...n, task: null } : n)),
+    );
+  }
+
+  /* ---------- notes (used in the next step) ---------- */
+
+  async function createNote(data) {
+    const res = await api.post("/notes", data);
+    setNotes((prev) => [res.data, ...prev]);
+    return res.data;
+  }
+
+  function changeNoteLocally(id, changes) {
+    setNotes((prev) =>
+      prev.map((n) =>
+        n._id === id
+          ? { ...n, ...changes, updatedAt: new Date().toISOString() }
+          : n,
+      ),
+    );
+  }
+
+  async function saveNote(id, changes) {
+    await api.put(`/notes/${id}`, changes);
+  }
+
+  async function deleteNote(id) {
+    await api.delete(`/notes/${id}`);
+    setNotes((prev) => prev.filter((n) => n._id !== id));
+  }
+
   const value = {
     subjects,
     tasks,
@@ -94,6 +147,13 @@ export function DataProvider({ children }) {
     deleteSubject,
     addClasses,
     deleteClass,
+    addTask,
+    updateTask,
+    deleteTask,
+    createNote,
+    changeNoteLocally,
+    saveNote,
+    deleteNote,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
