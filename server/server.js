@@ -8,6 +8,7 @@ import subjectRoutes from "./routes/subjectRoutes.js";
 import taskRoutes from "./routes/taskRoutes.js";
 import timetableRoutes from "./routes/timetableRoutes.js";
 import noteRoutes from "./routes/noteRoutes.js";
+import pomodoroRoutes from "./routes/pomodoroRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 20) {
@@ -28,6 +29,7 @@ app.use("/api/subjects", requireAuth, subjectRoutes);
 app.use("/api/tasks", requireAuth, taskRoutes);
 app.use("/api/timetable", requireAuth, timetableRoutes);
 app.use("/api/notes", requireAuth, noteRoutes);
+app.use("/api/pomodoro", requireAuth, pomodoroRoutes);
 
 app.use(errorHandler);
 

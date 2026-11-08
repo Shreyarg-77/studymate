@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { isToday, parseISO } from "date-fns";
+import api from "../api/client";
+import { useData } from "../context/DataContext";
 import useLocalStorage from "../hooks/useLocalStorage";
 
 const DEFAULTS = { focus: 60, short: 5, long: 15, longEvery: 4 };
@@ -42,15 +44,13 @@ function notify(text) {
 }
 
 function Pomodoro() {
+  const { tasks } = useData();
   const [settings, setSettings] = useLocalStorage(
     "studymate-pomodoro-settings-v2",
     DEFAULTS,
   );
-  const [sessions, setSessions] = useLocalStorage(
-    "studymate-pomodoro-sessions",
-    [],
-  );
-  const [tasks] = useLocalStorage("studymate-tasks-v2", []);
+  const [sessions, setSessions] = useState([]);
+  const [saveWarning, setSaveWarning] = useState("");
 
   const [mode, setMode] = useState("focus");
   const [running, setRunning] = useState(false);
@@ -61,6 +61,19 @@ function Pomodoro() {
   const [taskId, setTaskId] = useState("");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get("/pomodoro")
+      .then((res) => {
+        if (!cancelled) setSessions(res.data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const msLeft = running ? Math.max(endTime - now, 0) : remainingMs;
   const totalMs = settings[mode] * 60000;
@@ -83,15 +96,15 @@ function Pomodoro() {
     beep();
     if (mode === "focus") {
       notify("Focus session complete. Time for a break.");
-      setSessions((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          taskId: taskId ? Number(taskId) : null,
-          minutes: settings.focus,
-          completedAt: new Date().toISOString(),
-        },
-      ]);
+      api
+        .post("/pomodoro", { task: taskId || null, minutes: settings.focus })
+        .then((res) => {
+          setSessions((prev) => [...prev, res.data]);
+          setSaveWarning("");
+        })
+        .catch(() =>
+          setSaveWarning("Session finished but could not be saved."),
+        );
       const nextCycle = cycle + 1;
       setCycle(nextCycle);
       switchMode(nextCycle % settings.longEvery === 0 ? "long" : "short");
@@ -99,7 +112,7 @@ function Pomodoro() {
       notify("Break over. Ready to focus?");
       switchMode("focus");
     }
-  }, [mode, cycle, settings, taskId, switchMode, setSessions]);
+  }, [mode, cycle, settings, taskId, switchMode]);
 
   useEffect(() => {
     if (!running) return;
@@ -270,7 +283,7 @@ function Pomodoro() {
 
       <p className="mb-6 text-xs text-slate-400">
         Tap the time to type your own minutes, or use −/+. Each mode remembers
-        its own length.
+        its own length on this device.
       </p>
 
       <div className="mb-6 flex justify-center gap-3">
@@ -308,7 +321,7 @@ function Pomodoro() {
         >
           <option value="">No task selected</option>
           {incompleteTasks.map((t) => (
-            <option key={t.id} value={t.id}>
+            <option key={t._id} value={t._id}>
               {t.title}
             </option>
           ))}
@@ -321,6 +334,9 @@ function Pomodoro() {
           {todaySessions.length} session{todaySessions.length === 1 ? "" : "s"}{" "}
           · {todayMinutes} min focused
         </p>
+        {saveWarning && (
+          <p className="mt-1 text-xs text-red-600">{saveWarning}</p>
+        )}
       </div>
     </div>
   );

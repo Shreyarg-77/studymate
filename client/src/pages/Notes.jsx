@@ -1,6 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { format, parseISO } from "date-fns";
-import useLocalStorage from "../hooks/useLocalStorage";
+import { useData } from "../context/DataContext";
+import { errorMessage } from "../api/client";
 
 function renderInline(text) {
   return text
@@ -67,49 +68,129 @@ function NotePreview({ content, onToggleLine }) {
   );
 }
 
+const SAVE_LABELS = {
+  saved: "Saved",
+  unsaved: "Unsaved changes...",
+  saving: "Saving...",
+  error: "Couldn't save. It will retry on your next change.",
+};
+
 function Notes() {
-  const [notes, setNotes] = useLocalStorage("studymate-notes", []);
-  const [subjects] = useLocalStorage("studymate-subjects", []);
-  const [tasks] = useLocalStorage("studymate-tasks-v2", []);
+  const {
+    notes,
+    subjects,
+    tasks,
+    loading,
+    loadError,
+    createNote,
+    changeNoteLocally,
+    saveNote,
+    deleteNote,
+  } = useData();
 
   const [selectedId, setSelectedId] = useState(null);
   const [preview, setPreview] = useState(false);
   const [search, setSearch] = useState("");
   const [filterSubject, setFilterSubject] = useState("");
+  const [saveState, setSaveState] = useState("saved");
+  const [error, setError] = useState("");
+
   const textareaRef = useRef(null);
+  const pending = useRef({});
+  const timer = useRef(null);
+  const queue = useRef(Promise.resolve());
+  const saveRef = useRef(saveNote);
 
-  const selected = notes.find((n) => n.id === selectedId);
+  useEffect(() => {
+    saveRef.current = saveNote;
+  });
 
-  function updateNote(id, changes) {
-    setNotes(
-      notes.map((n) =>
-        n.id === id
-          ? { ...n, ...changes, updatedAt: new Date().toISOString() }
-          : n,
-      ),
-    );
-  }
+  const flush = useCallback(() => {
+    clearTimeout(timer.current);
+    const entries = Object.entries(pending.current);
+    if (entries.length === 0) return queue.current;
+    pending.current = {};
+    setSaveState("saving");
+    queue.current = queue.current.then(async () => {
+      try {
+        await Promise.all(
+          entries.map(([id, changes]) => saveRef.current(id, changes)),
+        );
+        setSaveState(
+          Object.keys(pending.current).length > 0 ? "unsaved" : "saved",
+        );
+      } catch {
+        entries.forEach(([id, changes]) => {
+          pending.current[id] = { ...changes, ...pending.current[id] };
+        });
+        setSaveState("error");
+      }
+    });
+    return queue.current;
+  }, []);
 
-  function createNote() {
-    const note = {
-      id: Date.now(),
-      title: "",
-      content: "",
-      subjectId: filterSubject ? Number(filterSubject) : null,
-      taskId: null,
-      pinned: false,
-      updatedAt: new Date().toISOString(),
+  useEffect(() => {
+    return () => {
+      flush();
     };
-    setNotes([note, ...notes]);
-    setSelectedId(note.id);
-    setPreview(false);
+  }, [flush]);
+
+  useEffect(() => {
+    function warn(e) {
+      if (Object.keys(pending.current).length > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
+
+  function edit(id, changes, immediate = false) {
+    changeNoteLocally(id, changes);
+    pending.current[id] = { ...pending.current[id], ...changes };
+    clearTimeout(timer.current);
+    if (immediate) {
+      flush();
+    } else {
+      setSaveState("unsaved");
+      timer.current = setTimeout(flush, 800);
+    }
   }
 
-  function deleteNote(id) {
-    if (!window.confirm("Delete this note?")) return;
-    setNotes(notes.filter((n) => n.id !== id));
-    setSelectedId(null);
+  async function handleCreate() {
+    setError("");
+    try {
+      const note = await createNote({
+        title: "",
+        content: "",
+        subject: filterSubject || null,
+        task: null,
+      });
+      setSelectedId(note._id);
+      setPreview(false);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
+
+  async function handleDelete(note) {
+    if (!window.confirm("Delete this note?")) return;
+    delete pending.current[note._id];
+    setError("");
+    try {
+      await queue.current;
+      await deleteNote(note._id);
+      setSelectedId(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  if (loading) return <p className="text-sm text-slate-500">Loading...</p>;
+  if (loadError) return <p className="text-sm text-red-600">{loadError}</p>;
+
+  const selected = notes.find((n) => n._id === selectedId);
 
   function applyFormat(type) {
     const el = textareaRef.current;
@@ -133,7 +214,7 @@ function Notes() {
       cursorEnd = cursorStart;
     }
 
-    updateNote(selected.id, { content: next });
+    edit(selected._id, { content: next });
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(cursorStart, cursorEnd);
@@ -145,12 +226,12 @@ function Notes() {
     lines[index] = lines[index].startsWith("- [ ] ")
       ? lines[index].replace("- [ ] ", "- [x] ")
       : lines[index].replace("- [x] ", "- [ ] ");
-    updateNote(selected.id, { content: lines.join("\n") });
+    edit(selected._id, { content: lines.join("\n") });
   }
 
   const query = search.trim().toLowerCase();
   const visibleNotes = notes
-    .filter((n) => !filterSubject || String(n.subjectId) === filterSubject)
+    .filter((n) => !filterSubject || n.subject === filterSubject)
     .filter(
       (n) =>
         !query ||
@@ -166,9 +247,9 @@ function Notes() {
   const taskOptions = selected
     ? tasks.filter(
         (t) =>
-          t.id === selected.taskId ||
+          t._id === selected.task ||
           (!t.completed &&
-            (!selected.subjectId || t.subjectId === selected.subjectId)),
+            (!selected.subject || t.subject === selected.subject)),
       )
     : [];
 
@@ -187,12 +268,14 @@ function Notes() {
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-2xl font-bold">Notes</h2>
         <button
-          onClick={createNote}
+          onClick={handleCreate}
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
         >
           + New note
         </button>
       </div>
+
+      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
 
       <div className="md:flex md:gap-4">
         <aside
@@ -212,7 +295,7 @@ function Notes() {
             >
               <option value="">All subjects</option>
               {subjects.map((s) => (
-                <option key={s.id} value={s.id}>
+                <option key={s._id} value={s._id}>
                   {s.name}
                 </option>
               ))}
@@ -228,16 +311,16 @@ function Notes() {
           ) : (
             <ul className="flex flex-col gap-2 md:max-h-[70vh] md:overflow-y-auto">
               {visibleNotes.map((note) => {
-                const subject = subjects.find((s) => s.id === note.subjectId);
+                const subject = subjects.find((s) => s._id === note.subject);
                 return (
-                  <li key={note.id}>
+                  <li key={note._id}>
                     <button
                       onClick={() => {
-                        setSelectedId(note.id);
+                        setSelectedId(note._id);
                         setPreview(false);
                       }}
                       className={`w-full rounded-lg border p-3 text-left ${
-                        note.id === selectedId
+                        note._id === selectedId
                           ? "border-indigo-500 bg-indigo-50"
                           : "border-slate-200 bg-white hover:bg-slate-50"
                       }`}
@@ -297,14 +380,14 @@ function Notes() {
                 <div className="ml-auto flex gap-3 text-sm">
                   <button
                     onClick={() =>
-                      updateNote(selected.id, { pinned: !selected.pinned })
+                      edit(selected._id, { pinned: !selected.pinned }, true)
                     }
                     className="text-indigo-600 hover:text-indigo-800"
                   >
                     {selected.pinned ? "Unpin" : "Pin"}
                   </button>
                   <button
-                    onClick={() => deleteNote(selected.id)}
+                    onClick={() => handleDelete(selected)}
                     className="text-red-500 hover:text-red-700"
                   >
                     Delete
@@ -314,44 +397,41 @@ function Notes() {
 
               <input
                 value={selected.title}
-                onChange={(e) =>
-                  updateNote(selected.id, { title: e.target.value })
-                }
+                onChange={(e) => edit(selected._id, { title: e.target.value })}
                 placeholder="Title"
                 className="mb-3 w-full border-b border-slate-200 pb-2 text-xl font-bold outline-none focus:border-indigo-500"
               />
 
               <div className="mb-3 grid gap-2 sm:grid-cols-2">
                 <select
-                  value={selected.subjectId ?? ""}
+                  value={selected.subject ?? ""}
                   onChange={(e) =>
-                    updateNote(selected.id, {
-                      subjectId: e.target.value ? Number(e.target.value) : null,
-                      taskId: null,
-                    })
+                    edit(
+                      selected._id,
+                      { subject: e.target.value || null, task: null },
+                      true,
+                    )
                   }
                   className={inputClass}
                 >
                   <option value="">General (no subject)</option>
                   {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
+                    <option key={s._id} value={s._id}>
                       {s.name}
                     </option>
                   ))}
                 </select>
 
                 <select
-                  value={selected.taskId ?? ""}
+                  value={selected.task ?? ""}
                   onChange={(e) =>
-                    updateNote(selected.id, {
-                      taskId: e.target.value ? Number(e.target.value) : null,
-                    })
+                    edit(selected._id, { task: e.target.value || null }, true)
                   }
                   className={inputClass}
                 >
                   <option value="">No linked task</option>
                   {taskOptions.map((t) => (
-                    <option key={t.id} value={t.id}>
+                    <option key={t._id} value={t._id}>
                       {t.title}
                     </option>
                   ))}
@@ -413,7 +493,7 @@ function Notes() {
                   ref={textareaRef}
                   value={selected.content}
                   onChange={(e) =>
-                    updateNote(selected.id, { content: e.target.value })
+                    edit(selected._id, { content: e.target.value })
                   }
                   placeholder="Start writing... Use the toolbar for headings, lists and checklists."
                   className="min-h-[50vh] w-full resize-y rounded-lg border border-slate-200 p-3 text-sm leading-relaxed outline-none focus:border-indigo-500"
@@ -421,8 +501,11 @@ function Notes() {
               )}
 
               <p className="mt-2 text-xs text-slate-400">
-                {wordCount} word{wordCount === 1 ? "" : "s"} · Saved
-                automatically · Last edited{" "}
+                {wordCount} word{wordCount === 1 ? "" : "s"} ·{" "}
+                <span className={saveState === "error" ? "text-red-500" : ""}>
+                  {SAVE_LABELS[saveState]}
+                </span>{" "}
+                · Last edited{" "}
                 {format(parseISO(selected.updatedAt), "d MMM, h:mm a")}
               </p>
             </div>
