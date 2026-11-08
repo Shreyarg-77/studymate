@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "test:api": "node scripts/smoke-test.js"
+    "test:api": "node scripts/smoke-test.js",
+    "test:unit": "node --test services/slotScheduler.test.js"
   },
   "keywords": [],
   "author": "",

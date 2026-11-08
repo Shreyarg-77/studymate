@@ -112,12 +112,21 @@ async function run() {
     category: "Assignment",
     dueDate: "2026-11-15",
     priority: "High",
+    estimatedMins: 90,
   });
   check("create task returns 201", r.status === 201 && Boolean(r.data?._id));
+  check("task estimate is saved", r.data?.estimatedMins === 90);
   const taskId = r.data?._id;
 
   r = await call("POST", "/tasks", { subject: subjectId });
   check("task without a title returns 400", r.status === 400);
+
+  r = await call("POST", "/tasks", {
+    title: "Too short",
+    subject: subjectId,
+    estimatedMins: 2,
+  });
+  check("estimate below 5 minutes returns 400", r.status === 400);
 
   r = await call("PUT", `/tasks/${taskId}`, { completed: true });
   check("mark task complete", r.status === 200 && r.data?.completed === true);

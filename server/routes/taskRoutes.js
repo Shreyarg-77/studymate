@@ -13,6 +13,7 @@ const ALLOWED = [
   "category",
   "dueDate",
   "priority",
+  "estimatedMins",
   "completed",
 ];
 
@@ -26,7 +27,8 @@ router.get(
 router.post(
   "/",
   asyncHandler(async (req, res) => {
-    const { title, subject, category, dueDate, priority } = req.body;
+    const { title, subject, category, dueDate, priority, estimatedMins } =
+      req.body;
     if (!subject) throw httpError(400, "Subject is required");
     await assertOwnsSubject(subject, req.user._id);
     const task = await Task.create({
@@ -36,6 +38,7 @@ router.post(
       category,
       dueDate,
       priority,
+      estimatedMins,
     });
     res.status(201).json(task);
   }),
