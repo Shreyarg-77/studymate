@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { DataProvider } from "../context/DataContext";
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -13,7 +14,11 @@ function ProtectedRoute() {
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
-  return <Outlet />;
+  return (
+    <DataProvider key={user.id}>
+      <Outlet />
+    </DataProvider>
+  );
 }
 
 export default ProtectedRoute;
