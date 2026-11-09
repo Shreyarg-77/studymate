@@ -23,6 +23,7 @@ const GROUP_ORDER = [
   "No due date",
   "Completed",
 ];
+const ESTIMATE_PRESETS = [30, 60, 90, 120];
 
 function daysLeft(task) {
   return differenceInCalendarDays(parseISO(task.dueDate), new Date());
@@ -78,6 +79,7 @@ function Tasks() {
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("Medium");
+  const [estimate, setEstimate] = useState("60");
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -103,6 +105,7 @@ function Tasks() {
     setTitle("");
     setDueDate("");
     setPriority("Medium");
+    setEstimate("60");
   }
 
   function startEdit(task) {
@@ -112,6 +115,7 @@ function Tasks() {
     setTitle(task.title);
     setDueDate(task.dueDate);
     setPriority(task.priority);
+    setEstimate(String(task.estimatedMins ?? 60));
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -122,12 +126,18 @@ function Tasks() {
       setError("Choose a subject and enter a title.");
       return;
     }
+    const mins = Number(estimate);
+    if (!Number.isInteger(mins) || mins < 5 || mins > 600) {
+      setError("Estimated time must be a whole number from 5 to 600 minutes.");
+      return;
+    }
     const data = {
       title: title.trim(),
       subject: subjectId,
       category,
       dueDate,
       priority,
+      estimatedMins: mins,
     };
     setSaving(true);
     setError("");
@@ -218,6 +228,9 @@ function Tasks() {
             >
               {task.priority}
             </span>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5">
+              {task.estimatedMins ?? 60} min
+            </span>
           </div>
         </div>
         <div className="flex gap-3">
@@ -307,6 +320,37 @@ function Tasks() {
             <option>Medium</option>
             <option>Low</option>
           </select>
+
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-slate-500">
+              Estimated time (minutes)
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="number"
+                min="5"
+                max="600"
+                step="5"
+                value={estimate}
+                onChange={(e) => setEstimate(e.target.value)}
+                className={`${inputClass} w-28`}
+              />
+              {ESTIMATE_PRESETS.map((n) => (
+                <button
+                  type="button"
+                  key={n}
+                  onClick={() => setEstimate(String(n))}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                    estimate === String(n)
+                      ? "border-indigo-600 bg-indigo-50 text-indigo-600"
+                      : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="flex gap-2 sm:col-span-2">
             <button
