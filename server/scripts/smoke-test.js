@@ -112,12 +112,21 @@ async function run() {
     category: "Assignment",
     dueDate: "2026-11-15",
     priority: "High",
+    estimatedMins: 90,
   });
   check("create task returns 201", r.status === 201 && Boolean(r.data?._id));
+  check("task estimate is saved", r.data?.estimatedMins === 90);
   const taskId = r.data?._id;
 
   r = await call("POST", "/tasks", { subject: subjectId });
   check("task without a title returns 400", r.status === 400);
+
+  r = await call("POST", "/tasks", {
+    title: "Too short",
+    subject: subjectId,
+    estimatedMins: 2,
+  });
+  check("estimate below 5 minutes returns 400", r.status === 400);
 
   r = await call("PUT", `/tasks/${taskId}`, { completed: true });
   check("mark task complete", r.status === 200 && r.data?.completed === true);
@@ -215,6 +224,126 @@ async function run() {
   r = await call("GET", "/pomodoro");
   check("session appears in the list", r.status === 200 && r.data.length === 1);
 
+  section("Study slots");
+  const PLAN_DATE = "2030-01-07"; // a Monday
+  const minutesFor = (list, id) =>
+    list.filter((s) => s.task === id).reduce((n, s) => n + s.minutes, 0);
+
+  r = await call("POST", "/tasks", {
+    title: "Plan A",
+    subject: subjectId,
+    priority: "High",
+    dueDate: "2030-01-08",
+    estimatedMins: 120,
+  });
+  const planA = r.data?._id;
+  r = await call("POST", "/tasks", {
+    title: "Plan B",
+    subject: subjectId,
+    priority: "Medium",
+    dueDate: "2030-01-09",
+    estimatedMins: 60,
+  });
+  const planB = r.data?._id;
+
+  r = await call("POST", "/slots/generate", { date: PLAN_DATE });
+  check(
+    "generate returns 200 with slots",
+    r.status === 200 && r.data?.slots?.length > 0,
+    r.data?.message || "",
+  );
+  const first = r.data?.slots || [];
+  check("task A gets its full 120 minutes", minutesFor(first, planA) === 120);
+  check("task B gets its full 60 minutes", minutesFor(first, planB) === 60);
+  check("nothing is left unscheduled", r.data?.unscheduled?.length === 0);
+  check(
+    "slots stay inside 08:00-22:00",
+    first.every((s) => s.start >= "08:00" && s.end <= "22:00"),
+  );
+  check(
+    "slots do not overlap Monday classes (09:00-11:00)",
+    first.every((s) => s.end <= "09:00" || s.start >= "11:00"),
+  );
+  const sorted = [...first].sort((a, b) => a.start.localeCompare(b.start));
+  check(
+    "slots do not overlap each other",
+    sorted.every((s, i) => i === 0 || s.start >= sorted[i - 1].end),
+  );
+  check("higher priority task comes first", first[0]?.task === planA);
+
+  r = await call("GET", `/slots?date=${PLAN_DATE}`);
+  check(
+    "GET returns the same slots",
+    r.status === 200 && r.data.length === first.length,
+  );
+
+  r = await call("POST", "/slots/generate", { date: PLAN_DATE });
+  check(
+    "generating again does not duplicate slots",
+    r.status === 200 && r.data.slots.length === first.length,
+  );
+  const firstSlotId = r.data.slots[0]._id;
+
+  r = await call("PATCH", `/slots/${firstSlotId}`, { status: "done" });
+  check("mark a slot done", r.status === 200 && r.data?.status === "done");
+  const doneSlot = r.data;
+
+  r = await call("PATCH", `/slots/${firstSlotId}`, { status: "finished" });
+  check("invalid status returns 400", r.status === 400);
+
+  r = await call("POST", "/slots/generate", { date: PLAN_DATE });
+  const afterDone = r.data?.slots || [];
+  check(
+    "done slot is kept in place",
+    afterDone.some(
+      (s) =>
+        s._id === firstSlotId &&
+        s.status === "done" &&
+        s.start === doneSlot.start,
+    ),
+  );
+  check(
+    "task A still totals 120 minutes after regenerating",
+    minutesFor(afterDone, planA) === 120,
+  );
+  check(
+    "no planned slot overlaps the done slot",
+    afterDone
+      .filter((s) => s._id !== firstSlotId)
+      .every((s) => s.end <= doneSlot.start || s.start >= doneSlot.end),
+  );
+
+  const nextSlot = afterDone.find((s) => s.status === "planned");
+  r = await call("PATCH", `/slots/${nextSlot._id}`, { status: "skipped" });
+  check(
+    "mark a slot skipped",
+    r.status === 200 && r.data?.status === "skipped",
+  );
+
+  r = await call("POST", "/slots/generate", { date: PLAN_DATE });
+  const afterSkip = r.data?.slots || [];
+  check(
+    "skipped slot stays and blocks its time",
+    afterSkip.some((s) => s._id === nextSlot._id && s.status === "skipped") &&
+      afterSkip
+        .filter((s) => s._id !== nextSlot._id)
+        .every((s) => s.end <= nextSlot.start || s.start >= nextSlot.end),
+  );
+
+  r = await call("PUT", `/tasks/${planB}`, { completed: true });
+  r = await call("GET", `/slots?date=${PLAN_DATE}`);
+  check(
+    "completing a task removes its planned slots",
+    r.data.every((s) => !(s.task === planB && s.status === "planned")),
+  );
+
+  r = await call("POST", "/slots/generate", { date: "2000-01-03" });
+  check("planning a past date returns 400", r.status === 400);
+  r = await call("POST", "/slots/generate", { date: "11/09/2026" });
+  check("bad date format returns 400", r.status === 400);
+  r = await call("GET", "/slots");
+  check("GET without a date returns 400", r.status === 400);
+
   section("Data isolation (second user)");
   const firstToken = token;
 
@@ -273,6 +402,12 @@ async function run() {
     r.status === 404,
   );
 
+  r = await call("GET", `/slots?date=${PLAN_DATE}`);
+  check("second user sees no slots", r.status === 200 && r.data.length === 0);
+
+  r = await call("PATCH", `/slots/${firstSlotId}`, { status: "skipped" });
+  check("second user cannot change first user's slot", r.status === 404);
+
   token = firstToken;
 
   r = await call("GET", "/notes");
@@ -290,6 +425,12 @@ async function run() {
   check(
     "its classes were removed",
     r.status === 200 && !r.data.some((e) => e.subject === subjectId),
+  );
+
+  r = await call("GET", `/slots?date=${PLAN_DATE}`);
+  check(
+    "its study slots were removed",
+    r.status === 200 && r.data.length === 0,
   );
 
   r = await call("DELETE", `/notes/${noteId}`);

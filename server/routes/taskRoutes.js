@@ -1,6 +1,7 @@
 import { Router } from "express";
 import Task from "../models/Task.js";
 import Note from "../models/Note.js";
+import StudySlot from "../models/StudySlot.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import httpError from "../utils/httpError.js";
 import { assertOwnsSubject } from "../utils/ownership.js";
@@ -13,6 +14,7 @@ const ALLOWED = [
   "category",
   "dueDate",
   "priority",
+  "estimatedMins",
   "completed",
 ];
 
@@ -26,7 +28,8 @@ router.get(
 router.post(
   "/",
   asyncHandler(async (req, res) => {
-    const { title, subject, category, dueDate, priority } = req.body;
+    const { title, subject, category, dueDate, priority, estimatedMins } =
+      req.body;
     if (!subject) throw httpError(400, "Subject is required");
     await assertOwnsSubject(subject, req.user._id);
     const task = await Task.create({
@@ -36,6 +39,7 @@ router.post(
       category,
       dueDate,
       priority,
+      estimatedMins,
     });
     res.status(201).json(task);
   }),
@@ -56,6 +60,14 @@ router.put(
       { new: true, runValidators: true },
     );
     if (!task) return res.status(404).json({ message: "Task not found" });
+
+    if (updates.completed === true) {
+      await StudySlot.deleteMany({
+        task: task._id,
+        user: req.user._id,
+        status: "planned",
+      });
+    }
     res.json(task);
   }),
 );
@@ -72,6 +84,7 @@ router.delete(
       { task: task._id, user: req.user._id },
       { task: null },
     );
+    await StudySlot.deleteMany({ task: task._id, user: req.user._id });
     res.json({ message: "Task deleted" });
   }),
 );

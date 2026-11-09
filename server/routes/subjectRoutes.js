@@ -3,6 +3,7 @@ import Subject from "../models/Subject.js";
 import Task from "../models/Task.js";
 import TimetableEntry from "../models/TimetableEntry.js";
 import Note from "../models/Note.js";
+import StudySlot from "../models/StudySlot.js";
 import asyncHandler from "../utils/asyncHandler.js";
 
 const router = Router();
@@ -36,6 +37,12 @@ router.delete(
       user: req.user._id,
     });
     if (!subject) return res.status(404).json({ message: "Subject not found" });
+
+    const taskIds = await Task.distinct("_id", {
+      subject: subject._id,
+      user: req.user._id,
+    });
+    await StudySlot.deleteMany({ user: req.user._id, task: { $in: taskIds } });
     await Task.deleteMany({ subject: subject._id, user: req.user._id });
     await TimetableEntry.deleteMany({
       subject: subject._id,

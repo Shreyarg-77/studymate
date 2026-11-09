@@ -3,10 +3,11 @@ import { useAuth } from "../context/AuthContext";
 
 const links = [
   { to: "/", label: "Tasks", end: true },
-  { to: "/subjects", label: "Subjects" },
+  { to: "/plan", label: "Plan" },
   { to: "/timetable", label: "Timetable" },
   { to: "/pomodoro", label: "Pomodoro" },
   { to: "/notes", label: "Notes" },
+  { to: "/subjects", label: "Subjects" },
 ];
 
 function Layout() {
