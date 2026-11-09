@@ -9,6 +9,7 @@ import Subjects from "./pages/Subjects";
 import Timetable from "./pages/Timetable";
 import Pomodoro from "./pages/Pomodoro";
 import Notes from "./pages/Notes";
+import Settings from "./pages/Settings";
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
               <Route path="/timetable" element={<Timetable />} />
               <Route path="/pomodoro" element={<Pomodoro />} />
               <Route path="/notes" element={<Notes />} />
+              <Route path="/settings" element={<Settings />} />
             </Route>
           </Route>
         </Routes>

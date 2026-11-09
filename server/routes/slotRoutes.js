@@ -5,6 +5,7 @@ import TimetableEntry from "../models/TimetableEntry.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import httpError from "../utils/httpError.js";
 import { generateSlots } from "../services/slotScheduler.js";
+import { getSettings } from "../services/settingsService.js";
 
 const router = Router();
 
@@ -55,6 +56,7 @@ router.post(
     const from = date === today && now ? now : null;
 
     const userId = req.user._id;
+    const settings = await getSettings(userId);
 
     // Planned slots from days that have already passed are stale.
     await StudySlot.deleteMany({
@@ -100,6 +102,14 @@ router.post(
         completed: t.completed,
       })),
       committed,
+      blocked: settings.blockedTimes,
+      prefs: {
+        dayStart: settings.dayStart,
+        dayEnd: settings.dayEnd,
+        minSlotMins: settings.minSlotMins,
+        maxSlotMins: settings.maxSlotMins,
+        breakMins: settings.breakMins,
+      },
       from,
     });
 

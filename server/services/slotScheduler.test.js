@@ -198,3 +198,46 @@ test("kept slots count as busy time", () => {
   });
   assert.equal(slots[0].start, "10:00");
 });
+
+test("blocked times are never used for study", () => {
+  const tasks = [
+    { id: "a", priority: "High", dueDate: "", estimatedMins: 240 },
+  ];
+  const blocked = [{ start: "13:00", end: "14:00" }];
+  const { slots } = generateSlots({
+    date: MONDAY,
+    tasks,
+    blocked,
+    prefs: { dayStart: "11:00", dayEnd: "16:00" },
+  });
+  assert.ok(slots.length > 0);
+  for (const s of slots) {
+    assert.ok(
+      s.end <= "13:00" || s.start >= "14:00",
+      `${s.start}-${s.end} hits the block`,
+    );
+  }
+});
+
+test("custom slot and break lengths are respected", () => {
+  const tasks = [
+    { id: "a", priority: "High", dueDate: "", estimatedMins: 120 },
+  ];
+  const { slots } = generateSlots({
+    date: MONDAY,
+    tasks,
+    prefs: {
+      dayStart: "09:00",
+      dayEnd: "12:00",
+      maxSlotMins: 45,
+      breakMins: 5,
+    },
+  });
+  assert.equal(slots.length, 3);
+  assert.equal(slots[0].end, "09:45");
+  assert.equal(slots[1].start, "09:50");
+  assert.equal(
+    slots.reduce((n, s) => n + s.minutes, 0),
+    120,
+  );
+});
