@@ -344,7 +344,95 @@ async function run() {
   r = await call("GET", "/slots");
   check("GET without a date returns 400", r.status === 400);
 
+  section("Settings");
+  r = await call("GET", "/settings");
+  check(
+    "defaults are returned when nothing is saved",
+    r.status === 200 &&
+      r.data?.dayStart === "08:00" &&
+      r.data?.dayEnd === "22:00" &&
+      r.data?.blockedTimes?.length === 0,
+  );
+
+  const goodSettings = {
+    dayStart: "09:00",
+    dayEnd: "20:00",
+    minSlotMins: 30,
+    maxSlotMins: 60,
+    breakMins: 5,
+    blockedTimes: [{ label: "Lunch", start: "12:00", end: "13:00" }],
+  };
+
+  r = await call("PUT", "/settings", {
+    ...goodSettings,
+    dayStart: "22:00",
+    dayEnd: "08:00",
+  });
+  check("study day ending before it starts returns 400", r.status === 400);
+
+  r = await call("PUT", "/settings", {
+    ...goodSettings,
+    minSlotMins: 60,
+    maxSlotMins: 45,
+  });
+  check("maximum slot below minimum returns 400", r.status === 400);
+
+  r = await call("PUT", "/settings", {
+    ...goodSettings,
+    blockedTimes: [{ label: "Lunch", start: "13:00", end: "12:00" }],
+  });
+  check("blocked time ending before it starts returns 400", r.status === 400);
+
+  r = await call("PUT", "/settings", {
+    ...goodSettings,
+    blockedTimes: [{ label: "", start: "12:00", end: "13:00" }],
+  });
+  check("blocked time without a name returns 400", r.status === 400);
+
+  r = await call("PUT", "/settings", goodSettings);
+  check(
+    "valid settings are saved",
+    r.status === 200 &&
+      r.data?.dayStart === "09:00" &&
+      r.data?.blockedTimes?.length === 1,
+    r.data?.message || "",
+  );
+
+  r = await call("GET", "/settings");
+  check(
+    "saved settings persist",
+    r.status === 200 && r.data?.maxSlotMins === 60,
+  );
+
+  const SETTINGS_DATE = "2030-01-08"; // a Tuesday, so no classes
+  r = await call("POST", "/tasks", {
+    title: "Settings task",
+    subject: subjectId,
+    priority: "High",
+    estimatedMins: 240,
+  });
+  r = await call("POST", "/slots/generate", { date: SETTINGS_DATE });
+  const custom = r.data?.slots || [];
+  check(
+    "plan is generated with the saved settings",
+    r.status === 200 && custom.length > 0,
+    r.data?.message || "",
+  );
+  check(
+    "slots stay inside the saved study hours (09:00-20:00)",
+    custom.every((s) => s.start >= "09:00" && s.end <= "20:00"),
+  );
+  check(
+    "no slot overlaps the blocked lunch (12:00-13:00)",
+    custom.every((s) => s.end <= "12:00" || s.start >= "13:00"),
+  );
+  check(
+    "no slot is longer than the saved maximum",
+    custom.every((s) => s.minutes <= 60),
+  );
+
   section("Data isolation (second user)");
+
   const firstToken = token;
 
   token = "";
@@ -407,6 +495,14 @@ async function run() {
 
   r = await call("PATCH", `/slots/${firstSlotId}`, { status: "skipped" });
   check("second user cannot change first user's slot", r.status === 404);
+
+  r = await call("GET", "/settings");
+  check(
+    "second user gets default settings, not the first user's",
+    r.status === 200 &&
+      r.data?.dayStart === "08:00" &&
+      r.data?.blockedTimes?.length === 0,
+  );
 
   token = firstToken;
 

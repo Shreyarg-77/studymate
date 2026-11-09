@@ -11,6 +11,7 @@ import noteRoutes from "./routes/noteRoutes.js";
 import pomodoroRoutes from "./routes/pomodoroRoutes.js";
 import slotRoutes from "./routes/slotRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import settingsRoutes from "./routes/settingsRoutes.js";
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 20) {
   console.error("JWT_SECRET is missing or too short in server/.env");
@@ -32,6 +33,7 @@ app.use("/api/timetable", requireAuth, timetableRoutes);
 app.use("/api/notes", requireAuth, noteRoutes);
 app.use("/api/pomodoro", requireAuth, pomodoroRoutes);
 app.use("/api/slots", requireAuth, slotRoutes);
+app.use("/api/settings", requireAuth, settingsRoutes);
 
 app.use(errorHandler);
 

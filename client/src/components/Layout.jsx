@@ -1,14 +1,20 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-const links = [
+const mainLinks = [
   { to: "/", label: "Tasks", end: true },
   { to: "/plan", label: "Plan" },
   { to: "/timetable", label: "Timetable" },
   { to: "/pomodoro", label: "Pomodoro" },
   { to: "/notes", label: "Notes" },
-  { to: "/subjects", label: "Subjects" },
 ];
+
+const moreLinks = [
+  { to: "/subjects", label: "Subjects" },
+  { to: "/settings", label: "Settings" },
+];
+
+const sideLinks = [...mainLinks, ...moreLinks];
 
 function Layout() {
   const { user, logout } = useAuth();
@@ -18,7 +24,7 @@ function Layout() {
       <aside className="hidden md:flex md:min-h-screen md:w-56 md:flex-col md:border-r md:border-slate-200 md:bg-white md:p-4">
         <h1 className="mb-6 text-xl font-bold text-indigo-600">StudyMate</h1>
         <nav className="flex flex-col gap-1">
-          {links.map((link) => (
+          {sideLinks.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
@@ -50,9 +56,22 @@ function Layout() {
 
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
         <span className="font-bold text-indigo-600">StudyMate</span>
-        <button onClick={logout} className="text-sm text-red-500">
-          Log out
-        </button>
+        <div className="flex items-center gap-4 text-sm">
+          {moreLinks.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              className={({ isActive }) =>
+                isActive ? "font-medium text-indigo-600" : "text-slate-500"
+              }
+            >
+              {link.label}
+            </NavLink>
+          ))}
+          <button onClick={logout} className="text-red-500">
+            Log out
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 p-4 pb-24 md:p-8">
@@ -60,7 +79,7 @@ function Layout() {
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 flex border-t border-slate-200 bg-white md:hidden">
-        {links.map((link) => (
+        {mainLinks.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}

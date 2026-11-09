@@ -95,6 +95,7 @@ export function findFreeGaps(windowStart, windowEnd, busy, minGap) {
 export function generateSlots({
   date,
   classes = [],
+  blocked = [],
   keptSlots = [],
   tasks = [],
   committed = {},
@@ -115,6 +116,10 @@ export function generateSlots({
     ...classes
       .filter((c) => c.day === weekday)
       .map((c) => ({ start: toMinutes(c.start), end: toMinutes(c.end) })),
+    ...blocked.map((b) => ({
+      start: toMinutes(b.start),
+      end: toMinutes(b.end),
+    })),
     ...keptSlots.map((s) => ({
       start: toMinutes(s.start),
       end: toMinutes(s.end),
