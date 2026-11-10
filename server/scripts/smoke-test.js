@@ -431,6 +431,135 @@ async function run() {
     custom.every((s) => s.minutes <= 60),
   );
 
+  section("Daily report");
+  const pad = (n) => String(n).padStart(2, "0");
+  const dayWindow = (y, m, d) => {
+    const start = new Date(y, m, d);
+    const end = new Date(y, m, d + 1);
+    return {
+      date: `${y}-${pad(m + 1)}-${pad(d)}`,
+      query: `from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}`,
+    };
+  };
+  const nowLocal = new Date();
+  const todayWin = dayWindow(
+    nowLocal.getFullYear(),
+    nowLocal.getMonth(),
+    nowLocal.getDate(),
+  );
+  const reportUrl = `/report?date=${todayWin.date}&${todayWin.query}`;
+
+  r = await call("POST", "/tasks", {
+    title: "Due today",
+    subject: subjectId,
+    dueDate: todayWin.date,
+    priority: "High",
+    estimatedMins: 60,
+  });
+  const dueTodayId = r.data?._id;
+  r = await call("POST", "/tasks", {
+    title: "Very late",
+    subject: subjectId,
+    dueDate: "2000-01-01",
+    priority: "Low",
+  });
+  const lateId = r.data?._id;
+  r = await call("POST", "/tasks", {
+    title: "Finish me",
+    subject: subjectId,
+    priority: "Medium",
+  });
+  const finishId = r.data?._id;
+
+  r = await call("GET", reportUrl);
+  check(
+    "report returns 200 for today",
+    r.status === 200 && r.data?.date === todayWin.date,
+    r.data?.message || "",
+  );
+  check(
+    "task due today is listed as due",
+    Boolean(r.data?.dueTasks?.some((t) => t._id === dueTodayId)),
+  );
+  check(
+    "old unfinished task is listed as overdue",
+    Boolean(r.data?.overdueTasks?.some((t) => t._id === lateId)),
+  );
+  check(
+    "unfinished task is not listed as completed",
+    !r.data?.completedTasks?.some((t) => t._id === finishId),
+  );
+  check(
+    "focus time matches the logged Pomodoro session",
+    r.data?.focus?.sessions === 1 && r.data?.focus?.minutes === 25,
+  );
+  check("next day info is included", r.data?.next?.topTasks?.length > 0);
+
+  r = await call("PUT", `/tasks/${finishId}`, { completed: true });
+  check(
+    "completing a task records completedAt",
+    r.status === 200 && Boolean(r.data?.completedAt),
+  );
+  r = await call("GET", reportUrl);
+  check(
+    "completed task appears in today's report",
+    Boolean(r.data?.completedTasks?.some((t) => t._id === finishId)),
+  );
+
+  r = await call("PUT", `/tasks/${finishId}`, { completed: false });
+  check(
+    "unticking a task clears completedAt",
+    r.status === 200 && r.data?.completedAt === null,
+  );
+  r = await call("GET", reportUrl);
+  check(
+    "unticked task leaves the completed list",
+    !r.data?.completedTasks?.some((t) => t._id === finishId),
+  );
+  r = await call("PUT", `/tasks/${finishId}`, { completed: true });
+
+  r = await call("PUT", `/tasks/${finishId}`, { completed: "yes" });
+  check("non-boolean completed value returns 400", r.status === 400);
+
+  const planWin = dayWindow(2030, 0, 7);
+  r = await call("GET", `/report?date=${planWin.date}&${planWin.query}`);
+  check(
+    "slot totals match the plan day",
+    r.status === 200 &&
+      r.data?.totals?.done?.count === 1 &&
+      r.data?.totals?.skipped?.count === 1,
+    r.data?.message || "",
+  );
+  check(
+    "done minutes match the slot marked done",
+    r.data?.totals?.done?.minutes === doneSlot.minutes,
+  );
+  check(
+    "slot list matches the totals",
+    r.data?.slots?.length ===
+      r.data.totals.done.count +
+        r.data.totals.skipped.count +
+        r.data.totals.planned.count,
+  );
+  check(
+    "a future day has no completed tasks or focus time",
+    r.data?.completedTasks?.length === 0 && r.data?.focus?.sessions === 0,
+  );
+  check(
+    "next day shows the planned minutes",
+    r.data?.next?.date === "2030-01-08" && r.data?.next?.plannedMinutes > 0,
+  );
+
+  r = await call("GET", `/report?date=${todayWin.date}`);
+  check("report without from and to returns 400", r.status === 400);
+
+  const wide = `from=${encodeURIComponent(new Date(2030, 0, 7).toISOString())}&to=${encodeURIComponent(new Date(2030, 0, 10).toISOString())}`;
+  r = await call("GET", `/report?date=2030-01-07&${wide}`);
+  check("a range longer than one day returns 400", r.status === 400);
+
+  r = await call("GET", `/report?date=bad&${todayWin.query}`);
+  check("bad date returns 400", r.status === 400);
+
   section("Data isolation (second user)");
 
   const firstToken = token;
@@ -502,6 +631,16 @@ async function run() {
     r.status === 200 &&
       r.data?.dayStart === "08:00" &&
       r.data?.blockedTimes?.length === 0,
+  );
+
+  r = await call("GET", reportUrl);
+  check(
+    "second user's report is empty",
+    r.status === 200 &&
+      r.data?.completedTasks?.length === 0 &&
+      r.data?.focus?.sessions === 0 &&
+      r.data?.dueTasks?.length === 0 &&
+      r.data?.overdueTasks?.length === 0,
   );
 
   token = firstToken;

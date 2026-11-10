@@ -52,7 +52,26 @@ router.put(
     for (const key of ALLOWED) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
+    if (
+      updates.completed !== undefined &&
+      typeof updates.completed !== "boolean"
+    ) {
+      throw httpError(400, "completed must be true or false");
+    }
     if (updates.subject) await assertOwnsSubject(updates.subject, req.user._id);
+
+    const existing = await Task.findOne({
+      _id: req.params.id,
+      user: req.user._id,
+    }).select("completed");
+    if (!existing) return res.status(404).json({ message: "Task not found" });
+
+    if (updates.completed === true && !existing.completed) {
+      updates.completedAt = new Date();
+    }
+    if (updates.completed === false) {
+      updates.completedAt = null;
+    }
 
     const task = await Task.findOneAndUpdate(
       { _id: req.params.id, user: req.user._id },
