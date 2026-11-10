@@ -58,13 +58,6 @@ router.post(
     const userId = req.user._id;
     const settings = await getSettings(userId);
 
-    // Planned slots from days that have already passed are stale.
-    await StudySlot.deleteMany({
-      user: userId,
-      status: "planned",
-      date: { $lt: today },
-    });
-
     const [classes, tasks, keptSlots, committedRows] = await Promise.all([
       TimetableEntry.find({ user: userId }).lean(),
       Task.find({ user: userId, completed: false }).lean(),
@@ -93,6 +86,7 @@ router.post(
     const result = generateSlots({
       date,
       classes,
+      blocked: settings.blockedTimes,
       keptSlots: keptSlots.map((s) => ({ start: s.start, end: s.end })),
       tasks: tasks.map((t) => ({
         id: String(t._id),
@@ -102,7 +96,6 @@ router.post(
         completed: t.completed,
       })),
       committed,
-      blocked: settings.blockedTimes,
       prefs: {
         dayStart: settings.dayStart,
         dayEnd: settings.dayEnd,
@@ -113,6 +106,7 @@ router.post(
       from,
     });
 
+    // Replace this day's unfinished plan with the new one.
     await StudySlot.deleteMany({ user: userId, date, status: "planned" });
     if (result.slots.length > 0) {
       await StudySlot.insertMany(

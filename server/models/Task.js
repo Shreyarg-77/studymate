@@ -32,6 +32,7 @@ const taskSchema = new mongoose.Schema(
       max: [600, "Estimate can be at most 600 minutes"],
     },
     completed: { type: Boolean, default: false },
+    completedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
