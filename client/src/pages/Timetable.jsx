@@ -19,6 +19,7 @@ function Timetable() {
     loadError,
     addSubject,
     addClasses,
+    updateClass,
     deleteClass,
   } = useData();
 
@@ -28,6 +29,7 @@ function Timetable() {
   const [start, setStart] = useState("09:00");
   const [end, setEnd] = useState("10:00");
   const [room, setRoom] = useState("");
+  const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -37,46 +39,93 @@ function Timetable() {
   const shownType = existing ? existing.type : type;
 
   function toggleDay(value) {
+    if (editingId) {
+      setDays([value]);
+      return;
+    }
     setDays(
       days.includes(value) ? days.filter((d) => d !== value) : [...days, value],
     );
   }
 
-  async function handleAddClass(e) {
+  function resetForm() {
+    setEditingId(null);
+    setName("");
+    setDays([]);
+    setStart("09:00");
+    setEnd("10:00");
+    setRoom("");
+    setError("");
+  }
+
+  function startEdit(entry) {
+    const subject = subjects.find((s) => s._id === entry.subject);
+    setEditingId(entry._id);
+    setName(subject ? subject.name : "");
+    setDays([entry.day]);
+    setStart(entry.start);
+    setEnd(entry.end);
+    setRoom(entry.room || "");
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function findClash(day) {
+    return timetable.find(
+      (en) =>
+        en._id !== editingId &&
+        en.day === day &&
+        start < en.end &&
+        end > en.start,
+    );
+  }
+
+  function clashMessage(clash, day) {
+    const clashSubject = subjects.find((s) => s._id === clash.subject);
+    const dayName = DAYS.find((d) => d.value === day).full;
+    return `Clashes with ${clashSubject ? clashSubject.name : "another class"} on ${dayName} (${clash.start} - ${clash.end}).`;
+  }
+
+  async function handleSubmit(e) {
     e.preventDefault();
     const cleanName = name.trim();
 
     if (!cleanName) return setError("Enter a subject name.");
-    if (days.length === 0) return setError("Select at least one day.");
+    if (days.length === 0) {
+      return setError(editingId ? "Select a day." : "Select at least one day.");
+    }
     if (end <= start) return setError("End time must be after start time.");
 
     for (const day of days) {
-      const clash = timetable.find(
-        (en) => en.day === day && start < en.end && end > en.start,
-      );
-      if (clash) {
-        const clashSubject = subjects.find((s) => s._id === clash.subject);
-        const dayName = DAYS.find((d) => d.value === day).full;
-        return setError(
-          `Clashes with ${clashSubject ? clashSubject.name : "another class"} on ${dayName} (${clash.start} - ${clash.end}).`,
-        );
-      }
+      const clash = findClash(day);
+      if (clash) return setError(clashMessage(clash, day));
     }
 
     setSaving(true);
     setError("");
     try {
-      const subject = existing || (await addSubject({ name: cleanName, type }));
-      await addClasses({
-        subject: subject._id,
-        days,
-        start,
-        end,
-        room: room.trim(),
-      });
-      setName("");
-      setDays([]);
-      setRoom("");
+      if (editingId) {
+        await updateClass(editingId, {
+          day: days[0],
+          start,
+          end,
+          room: room.trim(),
+        });
+        resetForm();
+      } else {
+        const subject =
+          existing || (await addSubject({ name: cleanName, type }));
+        await addClasses({
+          subject: subject._id,
+          days,
+          start,
+          end,
+          room: room.trim(),
+        });
+        setName("");
+        setDays([]);
+        setRoom("");
+      }
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -88,6 +137,7 @@ function Timetable() {
     setError("");
     try {
       await deleteClass(id);
+      if (editingId === id) resetForm();
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -100,7 +150,7 @@ function Timetable() {
   const practicalCount = subjects.length - theoryCount;
 
   const inputClass =
-    "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500";
+    "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500";
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -111,14 +161,22 @@ function Timetable() {
       </p>
 
       <form
-        onSubmit={handleAddClass}
+        onSubmit={handleSubmit}
         className="mb-6 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2"
       >
+        {editingId && (
+          <p className="rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-800 sm:col-span-2">
+            Editing one class. You can change its day, time and room. To change
+            the subject, delete the class and add it again.
+          </p>
+        )}
+
         <div>
           <input
             list="subject-names"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            disabled={Boolean(editingId)}
             placeholder="Subject name (e.g. Physics)"
             className={`${inputClass} w-full`}
           />
@@ -132,7 +190,7 @@ function Timetable() {
         <select
           value={shownType}
           onChange={(e) => setType(e.target.value)}
-          disabled={Boolean(existing)}
+          disabled={Boolean(existing) || Boolean(editingId)}
           className={inputClass}
         >
           <option value="theory">Theory</option>
@@ -140,7 +198,9 @@ function Timetable() {
         </select>
 
         <div className="sm:col-span-2">
-          <p className="mb-1 text-xs font-medium text-slate-500">Days</p>
+          <p className="mb-1 text-xs font-medium text-slate-500">
+            {editingId ? "Day" : "Days"}
+          </p>
           <div className="flex flex-wrap gap-2">
             {DAYS.map((d) => (
               <button
@@ -188,13 +248,24 @@ function Timetable() {
 
         {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60 sm:col-span-2"
-        >
-          {saving ? "Saving..." : "Add class"}
-        </button>
+        <div className="flex gap-2 sm:col-span-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+          >
+            {saving ? "Saving..." : editingId ? "Save changes" : "Add class"}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -220,7 +291,9 @@ function Timetable() {
                     return (
                       <li
                         key={en._id}
-                        className="flex items-start justify-between gap-2 rounded-md border-l-4 bg-slate-50 p-2"
+                        className={`flex items-start justify-between gap-2 rounded-md border-l-4 p-2 ${
+                          en._id === editingId ? "bg-indigo-50" : "bg-slate-50"
+                        }`}
                         style={{
                           borderLeftColor: subject ? subject.color : "#94A3B8",
                         }}
@@ -239,12 +312,20 @@ function Timetable() {
                             </span>
                           )}
                         </div>
-                        <button
-                          onClick={() => handleDeleteClass(en._id)}
-                          className="text-xs text-red-500 hover:text-red-700"
-                        >
-                          Delete
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => startEdit(en)}
+                            className="text-xs text-indigo-600 hover:text-indigo-800"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClass(en._id)}
+                            className="text-xs text-red-500 hover:text-red-700"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </li>
                     );
                   })}

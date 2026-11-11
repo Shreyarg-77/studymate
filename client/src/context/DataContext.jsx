@@ -82,6 +82,12 @@ export function DataProvider({ children }) {
     setTimetable((prev) => [...prev, ...res.data]);
   }
 
+  async function updateClass(id, changes) {
+    const res = await api.put(`/timetable/${id}`, changes);
+    setTimetable((prev) => prev.map((e) => (e._id === id ? res.data : e)));
+    return res.data;
+  }
+
   async function deleteClass(id) {
     await api.delete(`/timetable/${id}`);
     setTimetable((prev) => prev.filter((e) => e._id !== id));
@@ -109,7 +115,7 @@ export function DataProvider({ children }) {
     );
   }
 
-  /* ---------- notes (used in the next step) ---------- */
+  /* ---------- notes ---------- */
 
   async function createNote(data) {
     const res = await api.post("/notes", data);
@@ -146,6 +152,7 @@ export function DataProvider({ children }) {
     addSubject,
     deleteSubject,
     addClasses,
+    updateClass,
     deleteClass,
     addTask,
     updateTask,

@@ -15,6 +15,7 @@ const DAY_NAMES = [
   "Friday",
   "Saturday",
 ];
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 router.get(
   "/",
@@ -76,6 +77,58 @@ router.post(
       })),
     );
     res.status(201).json(entries);
+  }),
+);
+
+router.put(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const { day, start, end, room } = req.body;
+
+    const d = Number(day);
+    if (!Number.isInteger(d) || d < 0 || d > 6) {
+      throw httpError(
+        400,
+        "Day must be a number from 0 (Sunday) to 6 (Saturday)",
+      );
+    }
+    if (
+      typeof start !== "string" ||
+      !TIME.test(start) ||
+      typeof end !== "string" ||
+      !TIME.test(end)
+    ) {
+      throw httpError(400, "Times must be in HH:mm format");
+    }
+    if (end <= start) throw httpError(400, "End time must be after start time");
+
+    const entry = await TimetableEntry.findOne({
+      _id: req.params.id,
+      user: req.user._id,
+    });
+    if (!entry) return res.status(404).json({ message: "Class not found" });
+
+    const clash = await TimetableEntry.findOne({
+      user: req.user._id,
+      _id: { $ne: entry._id },
+      day: d,
+      start: { $lt: end },
+      end: { $gt: start },
+    }).populate("subject", "name");
+    if (clash) {
+      const name = clash.subject ? clash.subject.name : "another class";
+      throw httpError(
+        409,
+        `Clashes with ${name} on ${DAY_NAMES[d]} (${clash.start} - ${clash.end})`,
+      );
+    }
+
+    entry.day = d;
+    entry.start = start;
+    entry.end = end;
+    entry.room = typeof room === "string" ? room.trim() : "";
+    await entry.save();
+    res.json(entry);
   }),
 );
 
