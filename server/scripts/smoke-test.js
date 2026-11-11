@@ -354,6 +354,14 @@ async function run() {
       r.data?.blockedTimes?.length === 0,
   );
 
+  check(
+    "reminder defaults: briefing on at 07:00, slot reminders off",
+    r.data?.briefingEnabled === true &&
+      r.data?.briefingTime === "07:00" &&
+      r.data?.slotRemindersEnabled === false &&
+      r.data?.slotReminderLeadMins === 10,
+  );
+
   const goodSettings = {
     dayStart: "09:00",
     dayEnd: "20:00",
@@ -402,6 +410,53 @@ async function run() {
   check(
     "saved settings persist",
     r.status === 200 && r.data?.maxSlotMins === 60,
+  );
+
+  check(
+    "saving without reminder fields keeps the reminder defaults",
+    r.data?.briefingEnabled === true && r.data?.slotRemindersEnabled === false,
+  );
+
+  r = await call("PUT", "/settings", {
+    ...goodSettings,
+    briefingTime: "25:00",
+  });
+  check("invalid briefing time returns 400", r.status === 400);
+
+  r = await call("PUT", "/settings", {
+    ...goodSettings,
+    briefingEnabled: "yes",
+  });
+  check("non-boolean briefing flag returns 400", r.status === 400);
+
+  r = await call("PUT", "/settings", {
+    ...goodSettings,
+    slotReminderLeadMins: 0,
+  });
+  check("reminder lead time of 0 returns 400", r.status === 400);
+
+  r = await call("PUT", "/settings", {
+    ...goodSettings,
+    briefingEnabled: false,
+    briefingTime: "06:30",
+    slotRemindersEnabled: true,
+    slotReminderLeadMins: 15,
+  });
+  check(
+    "reminder settings are saved",
+    r.status === 200 &&
+      r.data?.briefingEnabled === false &&
+      r.data?.briefingTime === "06:30" &&
+      r.data?.slotRemindersEnabled === true &&
+      r.data?.slotReminderLeadMins === 15,
+    r.data?.message || "",
+  );
+  r = await call("GET", "/settings");
+  check(
+    "reminder settings persist",
+    r.status === 200 &&
+      r.data?.briefingTime === "06:30" &&
+      r.data?.slotReminderLeadMins === 15,
   );
 
   const SETTINGS_DATE = "2030-01-08"; // a Tuesday, so no classes

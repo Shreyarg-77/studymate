@@ -15,5 +15,9 @@ export async function getSettings(userId) {
       start: b.start,
       end: b.end,
     })),
+    briefingEnabled: doc?.briefingEnabled ?? true,
+    briefingTime: doc?.briefingTime ?? "07:00",
+    slotRemindersEnabled: doc?.slotRemindersEnabled ?? false,
+    slotReminderLeadMins: doc?.slotReminderLeadMins ?? 10,
   };
 }

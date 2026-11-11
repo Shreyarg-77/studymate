@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import Reminders from "./Reminders";
 
 const mainLinks = [
   { to: "/", label: "Tasks", end: true },
@@ -107,6 +108,7 @@ function Layout() {
       </header>
 
       <main className="flex-1 p-4 pb-24 md:p-8">
+        <Reminders />
         <Outlet />
       </main>
 

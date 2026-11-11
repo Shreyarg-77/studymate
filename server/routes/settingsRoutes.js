@@ -64,7 +64,7 @@ function validate(body) {
     return { label, start: b.start, end: b.end };
   });
 
-  return {
+  const data = {
     dayStart,
     dayEnd,
     minSlotMins,
@@ -72,6 +72,34 @@ function validate(body) {
     breakMins,
     blockedTimes: clean,
   };
+
+  // Reminder fields are optional, so older clients keep working.
+  if (body.briefingEnabled !== undefined) {
+    if (typeof body.briefingEnabled !== "boolean") {
+      throw httpError(400, "briefingEnabled must be true or false");
+    }
+    data.briefingEnabled = body.briefingEnabled;
+  }
+  if (body.briefingTime !== undefined) {
+    if (!isTime(body.briefingTime)) {
+      throw httpError(400, "Briefing time must be in HH:mm format");
+    }
+    data.briefingTime = body.briefingTime;
+  }
+  if (body.slotRemindersEnabled !== undefined) {
+    if (typeof body.slotRemindersEnabled !== "boolean") {
+      throw httpError(400, "slotRemindersEnabled must be true or false");
+    }
+    data.slotRemindersEnabled = body.slotRemindersEnabled;
+  }
+  if (body.slotReminderLeadMins !== undefined) {
+    if (!inRange(body.slotReminderLeadMins, 1, 60)) {
+      throw httpError(400, "Reminder lead time must be 1 to 60 minutes");
+    }
+    data.slotReminderLeadMins = body.slotReminderLeadMins;
+  }
+
+  return data;
 }
 
 router.get(

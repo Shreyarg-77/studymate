@@ -22,6 +22,10 @@ const settingsSchema = new mongoose.Schema(
     maxSlotMins: { type: Number, default: 90 },
     breakMins: { type: Number, default: 10 },
     blockedTimes: { type: [blockedSchema], default: [] },
+    briefingEnabled: { type: Boolean, default: true },
+    briefingTime: { type: String, default: "07:00", match: TIME },
+    slotRemindersEnabled: { type: Boolean, default: false },
+    slotReminderLeadMins: { type: Number, default: 10 },
   },
   { timestamps: true },
 );
