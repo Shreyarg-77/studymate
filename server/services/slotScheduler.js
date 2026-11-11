@@ -16,7 +16,8 @@ export const DEFAULT_PREFS = {
 
 const PRIORITY_WEIGHT = { High: 3, Medium: 2, Low: 1 };
 const DEFAULT_ESTIMATE = 60;
-const MIN_FINAL_CHUNK = 15; // the last piece of a task may be shorter than minSlotMins
+const MIN_FINAL_CHUNK = 5; // the last piece of a task may be shorter than minSlotMins
+const PREFERRED_TAIL = 15; // when splitting a task, avoid leaving a smaller leftover than this
 const ROUND_TO = 5; // "from" times are rounded up to the next 5 minutes
 
 export function toMinutes(time) {
@@ -149,7 +150,12 @@ export function generateSlots({
 
       for (const t of queue) {
         if (t.remaining <= 0) continue;
-        const chunk = Math.min(t.remaining, p.maxSlotMins, room);
+        let chunk = Math.min(t.remaining, p.maxSlotMins, room);
+        // When splitting, shrink this piece a little so the leftover is not tiny.
+        if (chunk < t.remaining && t.remaining - chunk < PREFERRED_TAIL) {
+          const trimmed = t.remaining - PREFERRED_TAIL;
+          if (trimmed >= p.minSlotMins) chunk = trimmed;
+        }
         const finishes = chunk === t.remaining;
         const valid =
           chunk >= p.minSlotMins || (finishes && chunk >= MIN_FINAL_CHUNK);

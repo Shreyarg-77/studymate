@@ -241,3 +241,24 @@ test("custom slot and break lengths are respected", () => {
     120,
   );
 });
+
+test("a split never strands a tiny leftover", () => {
+  const classes = [{ day: 1, start: "12:00", end: "13:00" }];
+  const tasks = [{ id: "a", priority: "High", dueDate: "", estimatedMins: 60 }];
+  const r = generateSlots({
+    date: MONDAY,
+    classes,
+    tasks,
+    prefs: { dayStart: "11:10", dayEnd: "16:00" },
+  });
+  assert.equal(r.slots[0].minutes, 45);
+  assert.equal(r.plannedMinutes, 60);
+  assert.equal(r.unscheduled.length, 0);
+});
+
+test("a very short task is still scheduled", () => {
+  const tasks = [{ id: "a", priority: "High", dueDate: "", estimatedMins: 10 }];
+  const { slots } = generateSlots({ date: MONDAY, tasks });
+  assert.equal(slots.length, 1);
+  assert.equal(slots[0].minutes, 10);
+});

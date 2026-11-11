@@ -4,6 +4,7 @@ import api, { errorMessage } from "../api/client";
 const MIN_OPTIONS = [15, 20, 30, 45, 60];
 const MAX_OPTIONS = [30, 45, 60, 90, 120, 180];
 const BREAK_OPTIONS = [0, 5, 10, 15, 20, 30];
+const LEAD_OPTIONS = [5, 10, 15, 30];
 const QUICK = [
   { label: "Lunch", start: "13:00", end: "14:00" },
   { label: "Dinner", start: "20:00", end: "21:00" },
@@ -16,6 +17,10 @@ const DEFAULTS = {
   maxSlotMins: 90,
   breakMins: 10,
   blockedTimes: [],
+  briefingEnabled: true,
+  briefingTime: "07:00",
+  slotRemindersEnabled: false,
+  slotReminderLeadMins: 10,
 };
 
 let counter = 0;
@@ -48,6 +53,7 @@ function checkForm(form) {
       return `${b.label.trim()}: the end time must be after the start time.`;
     }
   }
+  if (!form.briefingTime) return "Choose a time for the morning briefing.";
   return "";
 }
 
@@ -57,6 +63,9 @@ function Settings() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [permission, setPermission] = useState(() =>
+    "Notification" in window ? Notification.permission : "unsupported",
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +125,15 @@ function Settings() {
     setError("");
   }
 
+  async function askPermission() {
+    try {
+      const result = await Notification.requestPermission();
+      setPermission(result);
+    } catch {
+      setPermission("denied");
+    }
+  }
+
   async function handleSave(e) {
     e.preventDefault();
     const problem = checkForm(form);
@@ -138,9 +156,16 @@ function Settings() {
           start,
           end,
         })),
+        briefingEnabled: form.briefingEnabled,
+        briefingTime: form.briefingTime,
+        slotRemindersEnabled: form.slotRemindersEnabled,
+        slotReminderLeadMins: form.slotReminderLeadMins,
       });
       setForm(withKeys(res.data));
       setSaved(true);
+      window.dispatchEvent(
+        new CustomEvent("studymate-settings-changed", { detail: res.data }),
+      );
     } catch (err) {
       setError(errorMessage(err));
       setSaved(false);
@@ -160,7 +185,8 @@ function Settings() {
     <div className="mx-auto max-w-2xl">
       <h2 className="mb-1 text-2xl font-bold">Settings</h2>
       <p className="mb-4 text-sm text-slate-500">
-        These control how your study plan is generated.
+        These control how your study plan is generated and when you are
+        reminded.
       </p>
 
       <form onSubmit={handleSave} className="flex flex-col gap-5">
@@ -314,11 +340,100 @@ function Settings() {
           </div>
         </section>
 
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <h3 className="mb-1 text-sm font-bold text-slate-700">Reminders</h3>
+          <p className="mb-3 text-xs text-slate-500">
+            Reminders appear while StudyMate is open in a browser tab.
+          </p>
+
+          <label className="mb-2 flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={form.briefingEnabled}
+              onChange={(e) => update("briefingEnabled", e.target.checked)}
+              className="h-4 w-4"
+            />
+            Morning briefing, once a day
+          </label>
+          {form.briefingEnabled && (
+            <label className="mb-3 ml-6 block">
+              <span className={labelClass}>Show it after</span>
+              <input
+                type="time"
+                value={form.briefingTime}
+                onChange={(e) => update("briefingTime", e.target.value)}
+                className={inputClass}
+              />
+            </label>
+          )}
+
+          <label className="mb-2 flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={form.slotRemindersEnabled}
+              onChange={(e) => update("slotRemindersEnabled", e.target.checked)}
+              className="h-4 w-4"
+            />
+            Remind me before each study slot
+          </label>
+          {form.slotRemindersEnabled && (
+            <label className="mb-3 ml-6 block">
+              <span className={labelClass}>Minutes before</span>
+              <select
+                value={form.slotReminderLeadMins}
+                onChange={(e) =>
+                  update("slotReminderLeadMins", Number(e.target.value))
+                }
+                className={inputClass}
+              >
+                {LEAD_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-xs text-slate-400">
+                No slot reminders are shown while one of your classes is on.
+              </span>
+            </label>
+          )}
+
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            {permission === "unsupported" && (
+              <p className="text-xs text-slate-500">
+                This browser does not support notifications. Reminders will
+                still appear inside the app.
+              </p>
+            )}
+            {permission === "granted" && (
+              <p className="text-xs text-green-700">
+                Browser notifications are allowed.
+              </p>
+            )}
+            {permission === "default" && (
+              <button
+                type="button"
+                onClick={askPermission}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Allow browser notifications
+              </button>
+            )}
+            {permission === "denied" && (
+              <p className="text-xs text-amber-700">
+                Notifications are blocked for this site. You can allow them from
+                the lock icon next to the address. Until then, reminders appear
+                inside the app only.
+              </p>
+            )}
+          </div>
+        </section>
+
         {error && <p className="text-sm text-red-600">{error}</p>}
         {saved && (
           <p className="text-sm text-green-700">
-            Saved. Click "Regenerate plan" on the Plan page to apply this to a
-            day you have already planned.
+            Saved. Click "Regenerate plan" on the Plan page to apply the study
+            settings to a day you have already planned.
           </p>
         )}
 
