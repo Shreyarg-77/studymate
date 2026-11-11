@@ -11,6 +11,7 @@ const router = Router();
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 
 function validDate(value) {
   if (typeof value !== "string" || !DATE.test(value)) return false;
@@ -51,6 +52,21 @@ router.post(
       throw httpError(400, "now must be HH:mm");
     }
 
+    // Optional: plan only these tasks. Leaving it out plans every pending task.
+    let taskIds = null;
+    if (req.body.taskIds !== undefined) {
+      const ids = req.body.taskIds;
+      if (!Array.isArray(ids))
+        throw httpError(400, "taskIds must be a list of task ids");
+      if (ids.length === 0)
+        throw httpError(400, "Select at least one task to plan");
+      if (ids.length > 500) throw httpError(400, "Too many tasks selected");
+      if (ids.some((id) => typeof id !== "string" || !OBJECT_ID.test(id))) {
+        throw httpError(400, "taskIds must be a list of task ids");
+      }
+      taskIds = [...new Set(ids)];
+    }
+
     const today = todayInput || utcToday();
     if (date < today) throw httpError(400, "Choose today or a future date");
     const from = date === today && now ? now : null;
@@ -58,9 +74,12 @@ router.post(
     const userId = req.user._id;
     const settings = await getSettings(userId);
 
+    const taskFilter = { user: userId, completed: false };
+    if (taskIds) taskFilter._id = { $in: taskIds };
+
     const [classes, tasks, keptSlots, committedRows] = await Promise.all([
       TimetableEntry.find({ user: userId }).lean(),
-      Task.find({ user: userId, completed: false }).lean(),
+      Task.find(taskFilter).lean(),
       StudySlot.find({
         user: userId,
         date,

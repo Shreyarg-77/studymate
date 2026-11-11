@@ -709,6 +709,76 @@ async function run() {
   r = await call("GET", `/report?date=bad&${todayWin.query}`);
   check("bad date returns 400", r.status === 400);
 
+  section("Choosing tasks for a plan");
+  const PICK_DATE = "2030-01-10"; // a Thursday, so no classes
+  r = await call("POST", "/tasks", {
+    title: "Pick one",
+    subject: subjectId,
+    priority: "High",
+    estimatedMins: 60,
+  });
+  const pickOne = r.data?._id;
+  r = await call("POST", "/tasks", {
+    title: "Pick two",
+    subject: subjectId,
+    priority: "Low",
+    estimatedMins: 45,
+  });
+  const pickTwo = r.data?._id;
+
+  r = await call("POST", "/slots/generate", {
+    date: PICK_DATE,
+    taskIds: [pickOne],
+  });
+  check(
+    "plan with one selected task returns 200",
+    r.status === 200 && r.data?.slots?.length > 0,
+    r.data?.message || "",
+  );
+  check(
+    "only the selected task is planned",
+    (r.data?.slots || []).every((s) => s.task === pickOne),
+  );
+  check(
+    "the selected task gets its full time",
+    minutesFor(r.data?.slots || [], pickOne) === 60,
+  );
+
+  r = await call("POST", "/slots/generate", {
+    date: PICK_DATE,
+    taskIds: [pickOne, pickTwo],
+  });
+  check(
+    "ticking a second task plans it too",
+    minutesFor(r.data?.slots || [], pickOne) === 60 &&
+      minutesFor(r.data?.slots || [], pickTwo) === 45,
+  );
+
+  r = await call("POST", "/slots/generate", {
+    date: PICK_DATE,
+    taskIds: [pickTwo],
+  });
+  check(
+    "unticking a task removes its planned slots",
+    (r.data?.slots || []).length > 0 &&
+      (r.data?.slots || []).every((s) => s.task === pickTwo),
+  );
+
+  r = await call("POST", "/slots/generate", { date: PICK_DATE, taskIds: [] });
+  check("an empty selection returns 400", r.status === 400);
+
+  r = await call("POST", "/slots/generate", {
+    date: PICK_DATE,
+    taskIds: ["not-an-id"],
+  });
+  check("an invalid task id returns 400", r.status === 400);
+
+  r = await call("POST", "/slots/generate", {
+    date: PICK_DATE,
+    taskIds: "abc",
+  });
+  check("taskIds that is not a list returns 400", r.status === 400);
+
   section("Data isolation (second user)");
 
   const firstToken = token;
@@ -790,6 +860,15 @@ async function run() {
       r.data?.focus?.sessions === 0 &&
       r.data?.dueTasks?.length === 0 &&
       r.data?.overdueTasks?.length === 0,
+  );
+
+  r = await call("POST", "/slots/generate", {
+    date: PICK_DATE,
+    taskIds: [pickOne],
+  });
+  check(
+    "second user cannot plan first user's task",
+    r.status === 200 && r.data?.slots?.length === 0,
   );
 
   token = firstToken;
