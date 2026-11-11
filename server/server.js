@@ -1,6 +1,8 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import connectDB from "./config/db.js";
 import requireAuth from "./middleware/auth.js";
 import authRoutes from "./routes/authRoutes.js";
@@ -19,14 +21,54 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 20) {
   process.exit(1);
 }
 
+const allowedOrigins = (
+  process.env.CLIENT_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
+if (process.env.NODE_ENV === "production" && !process.env.CLIENT_ORIGIN) {
+  console.warn(
+    "CLIENT_ORIGIN is not set, so only localhost is allowed by CORS.",
+  );
+}
+
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// Render sits behind a proxy, so trust the first hop to see real client IPs.
+app.set("trust proxy", 1);
+
+app.use(helmet());
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Requests without an Origin header (scripts, curl) are not browser requests.
+      if (!origin || allowedOrigins.includes(origin))
+        return callback(null, true);
+      callback(null, false);
+    },
+  }),
+);
+app.use(express.json({ limit: "100kb" }));
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    message: "Too many attempts. Please wait 15 minutes and try again.",
+  },
+});
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", app: "StudyMate API" });
 });
 
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/subjects", requireAuth, subjectRoutes);
 app.use("/api/tasks", requireAuth, taskRoutes);
@@ -42,5 +84,6 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 connectDB().then(() => {
+  console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 });

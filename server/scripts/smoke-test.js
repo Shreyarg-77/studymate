@@ -1,4 +1,26 @@
+import http from "node:http";
+import https from "node:https";
+
 const BASE = process.env.API_URL || "http://localhost:5000/api";
+const ALLOWED_ORIGIN =
+  process.env.TEST_ALLOWED_ORIGIN || "http://localhost:5173";
+
+function corsHeaderFor(origin) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(`${BASE}/health`);
+    const lib = url.protocol === "https:" ? https : http;
+    const req = lib.request(
+      url,
+      { method: "GET", headers: { Origin: origin } },
+      (res) => {
+        res.resume();
+        resolve(res.headers["access-control-allow-origin"] || null);
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
 let token = "";
 let passed = 0;
 let failed = 0;
@@ -41,6 +63,25 @@ async function run() {
   section("Health");
   let r = await call("GET", "/health");
   check("health check returns 200", r.status === 200);
+
+  section("Security");
+  const healthRes = await fetch(`${BASE}/health`);
+  check(
+    "security headers are present (helmet)",
+    healthRes.headers.get("x-content-type-options") === "nosniff",
+  );
+  check(
+    "server does not advertise Express",
+    healthRes.headers.get("x-powered-by") === null,
+  );
+  check(
+    "your own frontend origin is allowed by CORS",
+    (await corsHeaderFor(ALLOWED_ORIGIN)) === ALLOWED_ORIGIN,
+  );
+  check(
+    "an unknown website origin is not allowed by CORS",
+    (await corsHeaderFor("https://evil.example.com")) === null,
+  );
 
   section("Auth");
   r = await call("POST", "/auth/register", {
@@ -154,6 +195,8 @@ async function run() {
     r.data?.message || "",
   );
 
+  const classIds = r.data?.map((e) => e._id) || [];
+
   r = await call("POST", "/timetable", {
     subject: subjectId,
     days: [1],
@@ -189,6 +232,57 @@ async function run() {
     end: "10:00",
   });
   check("end before start returns 400", r.status === 400);
+
+  r = await call("PUT", `/timetable/${classIds[1]}`, {
+    day: 3,
+    start: "09:00",
+    end: "10:30",
+    room: "C-1",
+  });
+  check(
+    "edit a class's time and room",
+    r.status === 200 && r.data?.end === "10:30" && r.data?.room === "C-1",
+    r.data?.message || "",
+  );
+
+  r = await call("PUT", `/timetable/${classIds[1]}`, {
+    day: 3,
+    start: "09:00",
+    end: "10:30",
+    room: "C-1",
+  });
+  check(
+    "saving a class without changes does not clash with itself",
+    r.status === 200,
+  );
+
+  r = await call("PUT", `/timetable/${classIds[1]}`, {
+    day: 1,
+    start: "09:30",
+    end: "10:30",
+  });
+  check("moving a class onto another class returns 409", r.status === 409);
+
+  r = await call("PUT", `/timetable/${classIds[1]}`, {
+    day: 3,
+    start: "11:00",
+    end: "10:00",
+  });
+  check("edit with end before start returns 400", r.status === 400);
+
+  r = await call("PUT", `/timetable/${classIds[1]}`, {
+    day: 9,
+    start: "09:00",
+    end: "10:00",
+  });
+  check("edit with an invalid day returns 400", r.status === 400);
+
+  r = await call("PUT", "/timetable/123", {
+    day: 3,
+    start: "09:00",
+    end: "10:00",
+  });
+  check("edit with an invalid id returns 400", r.status === 400);
 
   section("Notes");
   r = await call("POST", "/notes", {
