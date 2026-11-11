@@ -3,14 +3,16 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { errorMessage } from "../api/client";
 
-function Auth({ mode }) {
+function AuthForm({ mode }) {
   const isRegister = mode === "register";
   const { user, login, register } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
+  const justRegistered = !isRegister && location.state?.registered === true;
+
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(location.state?.email || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -22,9 +24,16 @@ function Auth({ mode }) {
     setError("");
     setSubmitting(true);
     try {
-      if (isRegister) await register(name, email, password);
-      else await login(email, password);
-      navigate(location.state?.from?.pathname || "/", { replace: true });
+      if (isRegister) {
+        await register(name, email, password);
+        navigate("/login", {
+          replace: true,
+          state: { registered: true, email: email.trim().toLowerCase() },
+        });
+      } else {
+        await login(email, password);
+        navigate(location.state?.from?.pathname || "/", { replace: true });
+      }
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -42,6 +51,12 @@ function Auth({ mode }) {
         <p className="mb-5 text-sm text-slate-500">
           {isRegister ? "Create your account" : "Log in to your planner"}
         </p>
+
+        {justRegistered && (
+          <p className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+            Account created. Please log in with your new details.
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           {isRegister && (
@@ -69,6 +84,7 @@ function Auth({ mode }) {
               isRegister ? "Password (min 6 characters)" : "Password"
             }
             autoComplete={isRegister ? "new-password" : "current-password"}
+            autoFocus={justRegistered}
             className={inputClass}
           />
 
@@ -99,6 +115,10 @@ function Auth({ mode }) {
       </div>
     </div>
   );
+}
+
+function Auth({ mode }) {
+  return <AuthForm key={mode} mode={mode} />;
 }
 
 export default Auth;

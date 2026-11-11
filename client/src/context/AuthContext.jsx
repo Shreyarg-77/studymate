@@ -40,10 +40,9 @@ export function AuthProvider({ children }) {
     setUser(res.data.user);
   }
 
+  // Creates the account only. The user signs in on the login page afterwards.
   async function register(name, email, password) {
-    const res = await api.post("/auth/register", { name, email, password });
-    localStorage.setItem(TOKEN_KEY, res.data.token);
-    setUser(res.data.user);
+    await api.post("/auth/register", { name, email, password });
   }
 
   function logout() {
