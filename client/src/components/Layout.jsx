@@ -107,12 +107,12 @@ function Layout() {
         )}
       </header>
 
-      <main className="flex-1 p-4 pb-24 md:p-8">
+      <main className="min-w-0 flex-1 p-4 pb-28 md:p-8">
         <Reminders />
         <Outlet />
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 flex border-t border-slate-200 bg-white md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 flex border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
         {mainLinks.map((link) => (
           <NavLink
             key={link.to}

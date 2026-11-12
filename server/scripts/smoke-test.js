@@ -21,6 +21,7 @@ function corsHeaderFor(origin) {
     req.end();
   });
 }
+
 let token = "";
 let passed = 0;
 let failed = 0;
@@ -194,7 +195,6 @@ async function run() {
     r.status === 201 && r.data?.length === 3,
     r.data?.message || "",
   );
-
   const classIds = r.data?.map((e) => e._id) || [];
 
   r = await call("POST", "/timetable", {
@@ -447,7 +447,6 @@ async function run() {
       r.data?.dayEnd === "22:00" &&
       r.data?.blockedTimes?.length === 0,
   );
-
   check(
     "reminder defaults: briefing on at 07:00, slot reminders off",
     r.data?.briefingEnabled === true &&
@@ -505,7 +504,6 @@ async function run() {
     "saved settings persist",
     r.status === 200 && r.data?.maxSlotMins === 60,
   );
-
   check(
     "saving without reminder fields keeps the reminder defaults",
     r.data?.briefingEnabled === true && r.data?.slotRemindersEnabled === false,
@@ -780,7 +778,6 @@ async function run() {
   check("taskIds that is not a list returns 400", r.status === 400);
 
   section("Data isolation (second user)");
-
   const firstToken = token;
 
   token = "";
@@ -861,6 +858,13 @@ async function run() {
       r.data?.dueTasks?.length === 0 &&
       r.data?.overdueTasks?.length === 0,
   );
+
+  r = await call("PUT", `/timetable/${classIds[0]}`, {
+    day: 2,
+    start: "15:00",
+    end: "16:00",
+  });
+  check("second user cannot edit first user's class", r.status === 404);
 
   r = await call("POST", "/slots/generate", {
     date: PICK_DATE,
