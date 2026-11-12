@@ -8,8 +8,17 @@ const noteSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    title: { type: String, default: "", trim: true },
-    content: { type: String, default: "" },
+    title: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: [120, "Note title can be at most 120 characters"],
+    },
+    content: {
+      type: String,
+      default: "",
+      maxlength: [30000, "A note can be at most 30000 characters"],
+    },
     subject: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Subject",

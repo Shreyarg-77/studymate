@@ -163,6 +163,7 @@ function Tasks() {
   }
 
   async function handleDelete(task) {
+    if (!window.confirm(`Delete "${task.title}"?`)) return;
     setError("");
     try {
       await deleteTask(task._id);
@@ -301,6 +302,7 @@ function Tasks() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Task title"
+            maxLength={120}
             className={`${inputClass} sm:col-span-2`}
           />
 

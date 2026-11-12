@@ -22,15 +22,21 @@ router.post(
   "/register",
   asyncHandler(async (req, res) => {
     const { name, email, password } = req.body;
-    if (!name || !name.trim()) throw httpError(400, "Name is required");
-    if (!email) throw httpError(400, "Email is required");
-    if (typeof password !== "string" || password.length < 6) {
-      throw httpError(400, "Password must be at least 6 characters");
+    if (typeof name !== "string" || !name.trim()) {
+      throw httpError(400, "Name is required");
+    }
+    if (typeof email !== "string" || !email.trim()) {
+      throw httpError(400, "Email is required");
+    }
+    if (
+      typeof password !== "string" ||
+      password.length < 6 ||
+      password.length > 72
+    ) {
+      throw httpError(400, "Password must be 6 to 72 characters");
     }
 
-    const existing = await User.findOne({
-      email: String(email).toLowerCase().trim(),
-    });
+    const existing = await User.findOne({ email: email.toLowerCase().trim() });
     if (existing) throw httpError(409, "Email already registered");
 
     const passwordHash = await bcrypt.hash(password, 10);

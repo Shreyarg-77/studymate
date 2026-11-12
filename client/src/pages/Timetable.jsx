@@ -134,6 +134,13 @@ function Timetable() {
   }
 
   async function handleDeleteClass(id) {
+    const entry = timetable.find((e) => e._id === id);
+    const subject = entry
+      ? subjects.find((s) => s._id === entry.subject)
+      : null;
+    const dayName = entry ? DAYS.find((d) => d.value === entry.day)?.full : "";
+    const label = subject ? `${subject.name} on ${dayName}` : "this class";
+    if (!window.confirm(`Delete ${label}?`)) return;
     setError("");
     try {
       await deleteClass(id);
@@ -178,6 +185,7 @@ function Timetable() {
             onChange={(e) => setName(e.target.value)}
             disabled={Boolean(editingId)}
             placeholder="Subject name (e.g. Physics)"
+            maxLength={40}
             className={`${inputClass} w-full`}
           />
           <datalist id="subject-names">
@@ -243,6 +251,7 @@ function Timetable() {
           value={room}
           onChange={(e) => setRoom(e.target.value)}
           placeholder="Room (optional)"
+          maxLength={30}
           className={`${inputClass} sm:col-span-2`}
         />
 

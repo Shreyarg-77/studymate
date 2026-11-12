@@ -36,33 +36,43 @@ function urgency(task) {
   return base + 10 / Math.max(left, 0.5);
 }
 
-/* Which tasks the user left out of a given day's plan, remembered per day. */
-const storageKey = (userId) => `studymate-plan-excluded-${userId}`;
+/* Small per-day, per-user memory kept in this browser. */
+const EXCLUDED = "studymate-plan-excluded";
+const UNPLANNED = "studymate-plan-unplanned";
 
-function loadExcluded(userId, date) {
+function readStore(key) {
   try {
-    const all = JSON.parse(localStorage.getItem(storageKey(userId)) || "{}");
-    return Array.isArray(all[date]) ? all[date] : [];
+    return JSON.parse(localStorage.getItem(key) || "{}");
   } catch {
-    return [];
+    return {};
   }
 }
 
-function saveExcluded(userId, date, ids) {
+function loadDay(prefix, userId, date) {
+  const value = readStore(`${prefix}-${userId}`)[date];
+  return Array.isArray(value) ? value : [];
+}
+
+function saveDay(prefix, userId, date, list) {
   try {
-    const key = storageKey(userId);
-    const all = JSON.parse(localStorage.getItem(key) || "{}");
+    const key = `${prefix}-${userId}`;
+    const store = readStore(key);
     const today = todayStr();
-    for (const d of Object.keys(all)) {
-      if (d < today) delete all[d];
+    for (const d of Object.keys(store)) {
+      if (d < today) delete store[d];
     }
-    if (ids.length > 0) all[date] = ids;
-    else delete all[date];
-    localStorage.setItem(key, JSON.stringify(all));
+    if (list.length > 0) store[date] = list;
+    else delete store[date];
+    localStorage.setItem(key, JSON.stringify(store));
   } catch {
     // storage may be unavailable
   }
 }
+
+const fetchMissed = () =>
+  api
+    .get("/slots/missed", { params: { today: todayStr() } })
+    .then((res) => res.data);
 
 function StudyPlan() {
   const { user } = useAuth();
@@ -76,8 +86,12 @@ function StudyPlan() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [excluded, setExcluded] = useState(() =>
-    loadExcluded(userId, todayStr()),
+    loadDay(EXCLUDED, userId, todayStr()),
   );
+  const [unplanned, setUnplanned] = useState(() =>
+    loadDay(UNPLANNED, userId, todayStr()),
+  );
+  const [missed, setMissed] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerDirty, setPickerDirty] = useState(false);
 
@@ -99,6 +113,18 @@ function StudyPlan() {
     };
   }, [date]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchMissed()
+      .then((data) => {
+        if (!cancelled) setMissed(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const pendingTasks = tasks.filter((t) => !t.completed);
   const pickerTasks = [...pendingTasks].sort((a, b) => urgency(b) - urgency(a));
   const selected = pendingTasks.filter((t) => !excluded.includes(t._id));
@@ -106,7 +132,8 @@ function StudyPlan() {
   function changeDate(next) {
     if (!next || next === date) return;
     setDate(next);
-    setExcluded(loadExcluded(userId, next));
+    setExcluded(loadDay(EXCLUDED, userId, next));
+    setUnplanned(loadDay(UNPLANNED, userId, next));
     setSummary(null);
     setError("");
     setPickerDirty(false);
@@ -119,7 +146,7 @@ function StudyPlan() {
 
   function setExcludedIds(next) {
     setExcluded(next);
-    saveExcluded(userId, date, next);
+    saveDay(EXCLUDED, userId, date, next);
     setPickerDirty(true);
   }
 
@@ -147,11 +174,15 @@ function StudyPlan() {
       });
       setSlots(res.data.slots);
       setSummary({
-        unscheduled: res.data.unscheduled,
         freeMinutes: res.data.freeMinutes,
         plannedMinutes: res.data.plannedMinutes,
       });
+      setUnplanned(res.data.unscheduled);
+      saveDay(UNPLANNED, userId, date, res.data.unscheduled);
       setPickerDirty(false);
+      fetchMissed()
+        .then(setMissed)
+        .catch(() => {});
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -213,13 +244,27 @@ function StudyPlan() {
     { planned: 0, done: 0, skipped: 0 },
   );
 
-  const unscheduled = (summary?.unscheduled || []).map((u) => ({
-    ...u,
-    task: tasks.find((t) => t._id === u.task),
-  }));
+  // The "not planned" list is remembered, but only tasks still pending are shown.
+  const unscheduled = unplanned
+    .map((u) => ({ ...u, task: tasks.find((t) => t._id === u.task) }))
+    .filter((u) => u.task && !u.task.completed);
   const urgentUnscheduled = unscheduled.filter(
-    (u) => u.task?.dueDate && u.task.dueDate <= date,
+    (u) => u.task.dueDate && u.task.dueDate <= date,
   );
+
+  // Has anything changed since this day's plan was made?
+  const plannedSlots = slots.filter((s) => s.status === "planned");
+  const planTime = plannedSlots.reduce(
+    (max, s) => Math.max(max, new Date(s.createdAt).getTime()),
+    0,
+  );
+  const changedSincePlan =
+    !isPast &&
+    plannedSlots.length > 0 &&
+    (timetable.some((c) => new Date(c.updatedAt).getTime() > planTime) ||
+      selected.some((t) => new Date(t.updatedAt).getTime() > planTime));
+
+  const showMissed = !isPast && missed && missed.count > 0;
 
   const navButton =
     "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40";
@@ -292,6 +337,43 @@ function StudyPlan() {
       )}
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
+      {showMissed && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3">
+          <p className="mb-1 text-sm font-bold text-red-800">
+            You have missed study time
+          </p>
+          <p className="mb-2 text-sm text-red-800">
+            {formatMinutes(missed.minutes)} of planned study ({missed.count}{" "}
+            slot{missed.count === 1 ? "" : "s"}) since{" "}
+            {format(parseISO(missed.earliest), "d MMM")} was never marked done.
+            Regenerate the plan to include that work. Make sure those tasks are
+            ticked under "Choose tasks to plan".
+          </p>
+          <button
+            onClick={generate}
+            disabled={busy || selected.length === 0}
+            className="text-sm font-medium text-red-800 underline disabled:opacity-40"
+          >
+            Regenerate plan now
+          </button>
+        </div>
+      )}
+
+      {changedSincePlan && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+          <p className="text-sm text-indigo-900">
+            Your classes or tasks changed after this plan was made.
+          </p>
+          <button
+            onClick={generate}
+            disabled={busy}
+            className="text-sm font-medium text-indigo-700 underline disabled:opacity-40"
+          >
+            Regenerate plan
+          </button>
+        </div>
+      )}
 
       {!isPast && pendingTasks.length > 0 && (
         <section className="mb-4 rounded-lg border border-slate-200 bg-white">
@@ -485,7 +567,7 @@ function StudyPlan() {
                 }`}
                 style={{ borderLeftColor: subject ? subject.color : "#94A3B8" }}
               >
-                <div className="w-24 shrink-0 text-xs font-medium text-slate-500">
+                <div className="w-full shrink-0 text-xs font-medium text-slate-500 sm:w-24">
                   {slot.start} - {slot.end}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -519,7 +601,7 @@ function StudyPlan() {
                     )}
                   </div>
                 </div>
-                <div className="flex gap-3 text-sm">
+                <div className="flex w-full justify-end gap-4 text-sm sm:w-auto">
                   {slot.status === "planned" ? (
                     <>
                       <button
@@ -557,14 +639,13 @@ function StudyPlan() {
           </p>
           <p className="mb-2 text-sm text-amber-800">
             This day's free time ran out. Breaks between slots and small gaps
-            left over cannot be used for study, so these tasks are not fully
-            planned:
+            left over cannot be used for study, so these tasks were not fully
+            planned the last time you generated this day:
           </p>
           <ul className="mb-2 list-inside list-disc text-sm text-amber-900">
             {unscheduled.map((u) => (
-              <li key={u.task?._id || u.minutes}>
-                {u.task ? u.task.title : "A task"} · {formatMinutes(u.minutes)}{" "}
-                still unplanned
+              <li key={u.task._id}>
+                {u.task.title} · {formatMinutes(u.minutes)} still unplanned
               </li>
             ))}
           </ul>

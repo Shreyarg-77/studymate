@@ -26,7 +26,12 @@ const timetableSchema = new mongoose.Schema(
       required: [true, "End time is required"],
       match: [TIME, "End time must be HH:mm"],
     },
-    room: { type: String, default: "", trim: true },
+    room: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: [30, "Room can be at most 30 characters"],
+    },
   },
   { timestamps: true },
 );

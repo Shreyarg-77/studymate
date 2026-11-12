@@ -24,6 +24,8 @@ const slotSchema = new mongoose.Schema(
       enum: ["planned", "done", "skipped"],
       default: "planned",
     },
+    // True once the work from a missed slot has been included in a newer plan.
+    handled: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
