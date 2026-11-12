@@ -1,1 +1,30 @@
 @import "tailwindcss";
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  overflow-wrap: anywhere;
+}
+
+/* Phones: 16px fields stop iOS Safari zooming in when you tap one.
+   Fields that already have a large size (note title, Pomodoro time) are skipped. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not(.text-xl):not(.text-4xl),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Touch screens: bigger tap targets for buttons and checkboxes. */
+@media (pointer: coarse) {
+  button {
+    min-height: 40px;
+  }
+  input[type="checkbox"] {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
