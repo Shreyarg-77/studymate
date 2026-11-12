@@ -473,6 +473,10 @@ function StudyPlan() {
             }
 
             const { slot, task, subject } = item;
+            const overdue = Boolean(task?.dueDate) && task.dueDate < date;
+            const dueOnThisDay =
+              Boolean(task?.dueDate) && task.dueDate === date;
+            const showFlag = slot.status !== "done";
             return (
               <li
                 key={`s-${item.key}`}
@@ -502,6 +506,17 @@ function StudyPlan() {
                     >
                       {slot.status}
                     </span>
+                    {showFlag && overdue && (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">
+                        Overdue · was due{" "}
+                        {format(parseISO(task.dueDate), "d MMM")}
+                      </span>
+                    )}
+                    {showFlag && dueOnThisDay && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700">
+                        {date === today ? "Due today" : "Due this day"}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-3 text-sm">
