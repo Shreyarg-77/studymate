@@ -4,25 +4,15 @@ import Task from "../models/Task.js";
 import TimetableEntry from "../models/TimetableEntry.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import httpError from "../utils/httpError.js";
+import { validDate, addDaysToDate } from "../utils/dates.js";
 import { generateSlots } from "../services/slotScheduler.js";
 import { getSettings } from "../services/settingsService.js";
 
 const router = Router();
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
-
-function validDate(value) {
-  if (typeof value !== "string" || !DATE.test(value)) return false;
-  const [y, m, d] = value.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return (
-    dt.getUTCFullYear() === y &&
-    dt.getUTCMonth() === m - 1 &&
-    dt.getUTCDate() === d
-  );
-}
+const MISSED_LOOKBACK_DAYS = 14;
 
 function utcToday() {
   return new Date().toISOString().slice(0, 10);
@@ -36,6 +26,35 @@ router.get(
     res.json(
       await StudySlot.find({ user: req.user._id, date }).sort({ start: 1 }),
     );
+  }),
+);
+
+// Planned slots from earlier days that were never marked done and whose work
+// has not been included in a newer plan yet.
+router.get(
+  "/missed",
+  asyncHandler(async (req, res) => {
+    const { today } = req.query;
+    if (!validDate(today)) throw httpError(400, "today must be YYYY-MM-DD");
+
+    const since = addDaysToDate(today, -MISSED_LOOKBACK_DAYS);
+    const slots = await StudySlot.find({
+      user: req.user._id,
+      status: "planned",
+      handled: { $ne: true },
+      date: { $gte: since, $lt: today },
+    })
+      .select("date minutes")
+      .lean();
+
+    res.json({
+      count: slots.length,
+      minutes: slots.reduce((sum, s) => sum + s.minutes, 0),
+      earliest: slots.reduce(
+        (min, s) => (min === null || s.date < min ? s.date : min),
+        null,
+      ),
+    });
   }),
 );
 
@@ -124,6 +143,19 @@ router.post(
       },
       from,
     });
+
+    // Missed work from earlier days is part of this plan, so stop warning about it.
+    // Tasks the user left out of this plan keep their warning.
+    await StudySlot.updateMany(
+      {
+        user: userId,
+        status: "planned",
+        handled: { $ne: true },
+        date: { $lt: today },
+        task: { $in: tasks.map((t) => t._id) },
+      },
+      { handled: true },
+    );
 
     // Replace this day's unfinished plan with the new one.
     await StudySlot.deleteMany({ user: userId, date, status: "planned" });

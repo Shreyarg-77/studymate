@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
+import ErrorBoundary from "./components/ErrorBoundary";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import Auth from "./pages/Auth";
@@ -14,27 +15,29 @@ import Settings from "./pages/Settings";
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Auth mode="login" />} />
-          <Route path="/register" element={<Auth mode="register" />} />
+    <ErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Auth mode="login" />} />
+            <Route path="/register" element={<Auth mode="register" />} />
 
-          <Route element={<ProtectedRoute />}>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Tasks />} />
-              <Route path="/plan" element={<StudyPlan />} />
-              <Route path="/report" element={<Report />} />
-              <Route path="/subjects" element={<Subjects />} />
-              <Route path="/timetable" element={<Timetable />} />
-              <Route path="/pomodoro" element={<Pomodoro />} />
-              <Route path="/notes" element={<Notes />} />
-              <Route path="/settings" element={<Settings />} />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<Layout />}>
+                <Route path="/" element={<Tasks />} />
+                <Route path="/plan" element={<StudyPlan />} />
+                <Route path="/report" element={<Report />} />
+                <Route path="/subjects" element={<Subjects />} />
+                <Route path="/timetable" element={<Timetable />} />
+                <Route path="/pomodoro" element={<Pomodoro />} />
+                <Route path="/notes" element={<Notes />} />
+                <Route path="/settings" element={<Settings />} />
+              </Route>
             </Route>
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

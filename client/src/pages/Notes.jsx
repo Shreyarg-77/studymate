@@ -399,6 +399,7 @@ function Notes() {
                 value={selected.title}
                 onChange={(e) => edit(selected._id, { title: e.target.value })}
                 placeholder="Title"
+                maxLength={120}
                 className="mb-3 w-full border-b border-slate-200 pb-2 text-xl font-bold outline-none focus:border-indigo-500"
               />
 
@@ -496,6 +497,7 @@ function Notes() {
                     edit(selected._id, { content: e.target.value })
                   }
                   placeholder="Start writing... Use the toolbar for headings, lists and checklists."
+                  maxLength={30000}
                   className="min-h-[50vh] w-full resize-y rounded-lg border border-slate-200 p-3 text-sm leading-relaxed outline-none focus:border-indigo-500"
                 />
               )}

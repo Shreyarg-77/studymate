@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { errorMessage } from "../api/client";
+import useSlowFlag from "../hooks/useSlowFlag";
 
 function AuthForm({ mode }) {
   const isRegister = mode === "register";
@@ -16,6 +17,7 @@ function AuthForm({ mode }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const slow = useSlowFlag(submitting);
 
   if (user) return <Navigate to="/" replace />;
 
@@ -65,6 +67,7 @@ function AuthForm({ mode }) {
               onChange={(e) => setName(e.target.value)}
               placeholder="Your name"
               autoComplete="name"
+              maxLength={60}
               className={inputClass}
             />
           )}
@@ -74,6 +77,7 @@ function AuthForm({ mode }) {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Email"
             autoComplete="email"
+            maxLength={254}
             className={inputClass}
           />
           <input
@@ -81,10 +85,11 @@ function AuthForm({ mode }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={
-              isRegister ? "Password (min 6 characters)" : "Password"
+              isRegister ? "Password (6 to 72 characters)" : "Password"
             }
             autoComplete={isRegister ? "new-password" : "current-password"}
             autoFocus={justRegistered}
+            maxLength={72}
             className={inputClass}
           />
 
@@ -101,6 +106,13 @@ function AuthForm({ mode }) {
                 ? "Create account"
                 : "Log in"}
           </button>
+
+          {slow && (
+            <p className="text-xs text-slate-500">
+              The server is waking up after being idle. This can take up to a
+              minute. Please keep this page open.
+            </p>
+          )}
         </form>
 
         <p className="mt-4 text-center text-sm text-slate-500">

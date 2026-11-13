@@ -64,6 +64,7 @@ function Subjects() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Subject name (e.g. Physics)"
+          maxLength={40}
           className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500"
         />
         <select

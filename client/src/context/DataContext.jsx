@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api, { errorMessage } from "../api/client";
+import Loading from "../components/Loading";
 
 const DataContext = createContext(null);
 
@@ -21,6 +22,7 @@ export function DataProvider({ children }) {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +48,13 @@ export function DataProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
+
+  function reload() {
+    setLoadError("");
+    setLoading(true);
+    setAttempt((n) => n + 1);
+  }
 
   /* ---------- subjects ---------- */
 
@@ -162,6 +170,27 @@ export function DataProvider({ children }) {
     saveNote,
     deleteNote,
   };
+
+  if (loading) return <Loading label="Loading your planner..." />;
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+        <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 text-center">
+          <p className="mb-1 text-sm font-bold text-slate-900">
+            Could not load your data
+          </p>
+          <p className="mb-4 text-sm text-red-600">{loadError}</p>
+          <button
+            onClick={reload}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
