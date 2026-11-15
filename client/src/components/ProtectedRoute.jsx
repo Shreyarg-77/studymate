@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { DataProvider } from "../context/DataContext";
+import { PomodoroProvider } from "../context/PomodoroContext";
 import Loading from "./Loading";
 
 function ProtectedRoute() {
@@ -13,7 +14,9 @@ function ProtectedRoute() {
   }
   return (
     <DataProvider key={user.id}>
-      <Outlet />
+      <PomodoroProvider>
+        <Outlet />
+      </PomodoroProvider>
     </DataProvider>
   );
 }
