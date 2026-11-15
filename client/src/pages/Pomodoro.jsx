@@ -1,11 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
-import { isToday, parseISO } from "date-fns";
-import api from "../api/client";
+import { useState } from "react";
 import { useData } from "../context/DataContext";
-import useLocalStorage from "../hooks/useLocalStorage";
+import { usePomodoro } from "../context/PomodoroContext";
 
-const DEFAULTS = { focus: 60, short: 5, long: 15, longEvery: 4 };
-const LIMITS = { focus: [1, 180], short: [1, 60], long: [1, 60] };
 const STEP_DOWN = 10;
 const STEP_UP = 15;
 
@@ -24,165 +20,24 @@ const MODE_COLOR = {
 const RADIUS = 90;
 const CIRC = 2 * Math.PI * RADIUS;
 
-function beep() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    osc.frequency.value = 880;
-    osc.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.4);
-  } catch {
-    // sound is optional
-  }
-}
-
-function notify(text) {
-  if ("Notification" in window && Notification.permission === "granted") {
-    new Notification("StudyMate", { body: text });
-  }
-}
-
 function Pomodoro() {
   const { tasks } = useData();
-  const [settings, setSettings] = useLocalStorage(
-    "studymate-pomodoro-settings-v2",
-    DEFAULTS,
-  );
-  const [sessions, setSessions] = useState([]);
-  const [saveWarning, setSaveWarning] = useState("");
-
-  const [mode, setMode] = useState("focus");
-  const [running, setRunning] = useState(false);
-  const [endTime, setEndTime] = useState(null);
-  const [remainingMs, setRemainingMs] = useState(settings.focus * 60000);
-  const [now, setNow] = useState(() => Date.now());
-  const [cycle, setCycle] = useState(0);
-  const [taskId, setTaskId] = useState("");
+  const p = usePomodoro();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get("/pomodoro")
-      .then((res) => {
-        if (!cancelled) setSessions(res.data);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const msLeft = running ? Math.max(endTime - now, 0) : remainingMs;
-  const totalMs = settings[mode] * 60000;
-
-  const totalSec = Math.ceil(msLeft / 1000);
-  const timeText = `${String(Math.floor(totalSec / 60)).padStart(2, "0")}:${String(totalSec % 60).padStart(2, "0")}`;
-
-  const switchMode = useCallback(
-    (next) => {
-      setMode(next);
-      setRunning(false);
-      setEndTime(null);
-      setEditing(false);
-      setRemainingMs(settings[next] * 60000);
-    },
-    [settings],
-  );
-
-  const finishSession = useCallback(() => {
-    beep();
-    if (mode === "focus") {
-      notify("Focus session complete. Time for a break.");
-      api
-        .post("/pomodoro", { task: taskId || null, minutes: settings.focus })
-        .then((res) => {
-          setSessions((prev) => [...prev, res.data]);
-          setSaveWarning("");
-        })
-        .catch(() =>
-          setSaveWarning("Session finished but could not be saved."),
-        );
-      const nextCycle = cycle + 1;
-      setCycle(nextCycle);
-      switchMode(nextCycle % settings.longEvery === 0 ? "long" : "short");
-    } else {
-      notify("Break over. Ready to focus?");
-      switchMode("focus");
-    }
-  }, [mode, cycle, settings, taskId, switchMode]);
-
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => {
-      const t = Date.now();
-      if (t >= endTime) {
-        finishSession();
-      } else {
-        setNow(t);
-      }
-    }, 250);
-    return () => clearInterval(id);
-  }, [running, endTime, finishSession]);
-
-  useEffect(() => {
-    document.title = running ? `${timeText} - StudyMate` : "StudyMate";
-    return () => {
-      document.title = "StudyMate";
-    };
-  }, [running, timeText]);
-
-  function start() {
-    const t = Date.now();
-    setNow(t);
-    setEndTime(t + remainingMs);
-    setRunning(true);
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-  }
-
-  function pause() {
-    setRemainingMs(Math.max(endTime - Date.now(), 0));
-    setRunning(false);
-    setEndTime(null);
-  }
-
-  function reset() {
-    setRunning(false);
-    setEndTime(null);
-    setRemainingMs(settings[mode] * 60000);
-  }
-
-  function setDuration(value) {
-    if (running) return;
-    const [min, max] = LIMITS[mode];
-    const minutes = Math.min(
-      Math.max(Math.round(Number(value)) || settings[mode], min),
-      max,
-    );
-    setSettings({ ...settings, [mode]: minutes });
-    setRemainingMs(minutes * 60000);
-  }
-
   function startEditing() {
-    if (running) return;
-    setDraft(String(settings[mode]));
+    if (p.running) return;
+    setDraft(String(p.settings[p.mode]));
     setEditing(true);
   }
 
   function commitEditing() {
-    setDuration(draft);
+    p.setDuration(draft);
     setEditing(false);
   }
 
   const incompleteTasks = tasks.filter((t) => !t.completed);
-  const todaySessions = sessions.filter((s) =>
-    isToday(parseISO(s.completedAt)),
-  );
-  const todayMinutes = todaySessions.reduce((sum, s) => sum + s.minutes, 0);
 
   const stepButton =
     "rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100";
@@ -195,9 +50,12 @@ function Pomodoro() {
         {MODES.map((m) => (
           <button
             key={m.key}
-            onClick={() => switchMode(m.key)}
+            onClick={() => {
+              setEditing(false);
+              p.switchMode(m.key);
+            }}
             className={`rounded-full px-4 py-1.5 text-sm font-medium ${
-              mode === m.key
+              p.mode === m.key
                 ? "bg-indigo-600 text-white"
                 : "bg-white text-slate-600 hover:bg-slate-100"
             }`}
@@ -207,7 +65,7 @@ function Pomodoro() {
         ))}
       </div>
 
-      <div className={`relative mx-auto mb-3 h-64 w-64 ${MODE_COLOR[mode]}`}>
+      <div className={`relative mx-auto mb-3 h-64 w-64 ${MODE_COLOR[p.mode]}`}>
         <svg viewBox="0 0 200 200" className="h-full w-full -rotate-90">
           <circle
             cx="100"
@@ -226,7 +84,7 @@ function Pomodoro() {
             strokeLinecap="round"
             stroke="currentColor"
             strokeDasharray={CIRC}
-            strokeDashoffset={CIRC * (1 - msLeft / totalMs)}
+            strokeDashoffset={CIRC * (1 - p.msLeft / p.totalMs)}
           />
         </svg>
 
@@ -236,8 +94,8 @@ function Pomodoro() {
               <input
                 type="number"
                 autoFocus
-                min={LIMITS[mode][0]}
-                max={LIMITS[mode][1]}
+                min={p.limits[0]}
+                max={p.limits[1]}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onBlur={commitEditing}
@@ -252,26 +110,26 @@ function Pomodoro() {
             <button
               type="button"
               onClick={startEditing}
-              disabled={running}
-              title={running ? "" : "Click to change the time"}
+              disabled={p.running}
+              title={p.running ? "" : "Click to change the time"}
               className="text-5xl font-bold text-slate-900 enabled:hover:text-indigo-600 disabled:cursor-default"
             >
-              {timeText}
+              {p.timeText}
             </button>
           )}
 
-          {!running && !editing && (
+          {!p.running && !editing && (
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
-                onClick={() => setDuration(settings[mode] - STEP_DOWN)}
+                onClick={() => p.setDuration(p.settings[p.mode] - STEP_DOWN)}
                 className={stepButton}
               >
                 −{STEP_DOWN}
               </button>
               <button
                 type="button"
-                onClick={() => setDuration(settings[mode] + STEP_UP)}
+                onClick={() => p.setDuration(p.settings[p.mode] + STEP_UP)}
                 className={stepButton}
               >
                 +{STEP_UP}
@@ -283,27 +141,28 @@ function Pomodoro() {
 
       <p className="mb-6 text-xs text-slate-400">
         Tap the time to type your own minutes, or use −/+. Each mode remembers
-        its own length on this device.
+        its own length on this device. The timer keeps running if you open
+        another page.
       </p>
 
       <div className="mb-6 flex justify-center gap-3">
-        {running ? (
+        {p.running ? (
           <button
-            onClick={pause}
+            onClick={p.pause}
             className="rounded-lg bg-slate-800 px-6 py-2 text-sm font-medium text-white hover:bg-slate-900"
           >
             Pause
           </button>
         ) : (
           <button
-            onClick={start}
+            onClick={() => p.start()}
             className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-700"
           >
             Start
           </button>
         )}
         <button
-          onClick={reset}
+          onClick={p.reset}
           className="rounded-lg border border-slate-300 px-6 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
         >
           Reset
@@ -315,8 +174,8 @@ function Pomodoro() {
           Working on (optional)
         </label>
         <select
-          value={taskId}
-          onChange={(e) => setTaskId(e.target.value)}
+          value={p.taskId}
+          onChange={(e) => p.setTaskId(e.target.value)}
           className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
         >
           <option value="">No task selected</option>
@@ -331,11 +190,12 @@ function Pomodoro() {
       <div className="rounded-lg border border-slate-200 bg-white p-4 text-left">
         <p className="text-sm text-slate-500">Today</p>
         <p className="text-lg font-bold">
-          {todaySessions.length} session{todaySessions.length === 1 ? "" : "s"}{" "}
-          · {todayMinutes} min focused
+          {p.todaySessions.length} session
+          {p.todaySessions.length === 1 ? "" : "s"} · {p.todayMinutes} min
+          focused
         </p>
-        {saveWarning && (
-          <p className="mt-1 text-xs text-red-600">{saveWarning}</p>
+        {p.saveWarning && (
+          <p className="mt-1 text-xs text-red-600">{p.saveWarning}</p>
         )}
       </div>
     </div>
