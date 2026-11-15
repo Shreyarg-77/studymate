@@ -5,6 +5,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import connectDB from "./config/db.js";
 import requireAuth from "./middleware/auth.js";
+import sanitizeInput from "./middleware/sanitize.js";
 import authRoutes from "./routes/authRoutes.js";
 import subjectRoutes from "./routes/subjectRoutes.js";
 import taskRoutes from "./routes/taskRoutes.js";
@@ -16,8 +17,12 @@ import settingsRoutes from "./routes/settingsRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 20) {
-  console.error("JWT_SECRET is missing or too short in server/.env");
+const secret = process.env.JWT_SECRET || "";
+if (secret.length < 32 || secret.includes("replace-this")) {
+  console.error(
+    "JWT_SECRET is missing, shorter than 32 characters, or still the placeholder.\n" +
+      "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+  );
   process.exit(1);
 }
 
@@ -51,9 +56,13 @@ app.use(
   }),
 );
 app.use(express.json({ limit: "100kb" }));
+app.use(sanitizeInput);
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
+
+// Failed login and register attempts per network address.
+const authIpLimiter = rateLimit({
+  windowMs: FIFTEEN_MINUTES,
   limit: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,
   skipSuccessfulRequests: true,
   standardHeaders: "draft-7",
@@ -63,21 +72,52 @@ const authLimiter = rateLimit({
   },
 });
 
+// Failed attempts per email, so one account cannot be guessed from many addresses.
+const authEmailLimiter = rateLimit({
+  windowMs: FIFTEEN_MINUTES,
+  limit: Number(process.env.AUTH_EMAIL_LIMIT_MAX) || 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) =>
+    `email:${String(req.body?.email || "")
+      .toLowerCase()
+      .trim()
+      .slice(0, 254)}`,
+  message: {
+    message: "Too many attempts for this account. Please wait 15 minutes.",
+  },
+});
+
+// Requests per signed-in user, so students sharing one college network do not block each other.
+const userLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.API_RATE_LIMIT_PER_MIN) || 300,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user._id),
+  message: {
+    message: "You are sending requests too quickly. Please slow down.",
+  },
+});
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", app: "StudyMate API" });
 });
 
-app.use("/api/auth/login", authLimiter);
-app.use("/api/auth/register", authLimiter);
+app.use("/api/auth/login", authIpLimiter, authEmailLimiter);
+app.use("/api/auth/register", authIpLimiter, authEmailLimiter);
 app.use("/api/auth", authRoutes);
-app.use("/api/subjects", requireAuth, subjectRoutes);
-app.use("/api/tasks", requireAuth, taskRoutes);
-app.use("/api/timetable", requireAuth, timetableRoutes);
-app.use("/api/notes", requireAuth, noteRoutes);
-app.use("/api/pomodoro", requireAuth, pomodoroRoutes);
-app.use("/api/slots", requireAuth, slotRoutes);
-app.use("/api/settings", requireAuth, settingsRoutes);
-app.use("/api/report", requireAuth, reportRoutes);
+app.use("/api/subjects", requireAuth, userLimiter, subjectRoutes);
+app.use("/api/tasks", requireAuth, userLimiter, taskRoutes);
+app.use("/api/timetable", requireAuth, userLimiter, timetableRoutes);
+app.use("/api/notes", requireAuth, userLimiter, noteRoutes);
+app.use("/api/pomodoro", requireAuth, userLimiter, pomodoroRoutes);
+app.use("/api/slots", requireAuth, userLimiter, slotRoutes);
+app.use("/api/settings", requireAuth, userLimiter, settingsRoutes);
+app.use("/api/report", requireAuth, userLimiter, reportRoutes);
+
+app.use("/api", (req, res) => res.status(404).json({ message: "Not found" }));
 
 app.use(errorHandler);
 
