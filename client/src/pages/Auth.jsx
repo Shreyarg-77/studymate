@@ -85,7 +85,7 @@ function AuthForm({ mode }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={
-              isRegister ? "Password (6 to 72 characters)" : "Password"
+              isRegister ? "Password (8 to 72 characters)" : "Password"
             }
             autoComplete={isRegister ? "new-password" : "current-password"}
             autoFocus={justRegistered}
