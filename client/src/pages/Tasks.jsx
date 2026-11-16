@@ -86,7 +86,7 @@ function Tasks() {
 
   const [filterSubject, setFilterSubject] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
-  const [showCompleted, setShowCompleted] = useState(true);
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const selectedSubject = subjects.find((s) => s._id === subjectId);
   const categoryOptions = selectedSubject
@@ -186,6 +186,9 @@ function Tasks() {
     name,
     items: visibleTasks.filter((t) => getGroup(t) === name),
   })).filter((g) => g.items.length > 0);
+
+  const completedCount = tasks.filter((t) => t.completed).length;
+  const pendingCount = tasks.length - completedCount;
 
   const inputClass =
     "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500";
@@ -411,7 +414,7 @@ function Tasks() {
               checked={showCompleted}
               onChange={(e) => setShowCompleted(e.target.checked)}
             />
-            Show completed
+            Show completed ({completedCount})
           </label>
         </div>
       )}
@@ -419,7 +422,11 @@ function Tasks() {
       {tasks.length === 0 ? (
         <p className="text-sm text-slate-500">No tasks yet.</p>
       ) : grouped.length === 0 ? (
-        <p className="text-sm text-slate-500">No tasks match these filters.</p>
+        <p className="text-sm text-slate-500">
+          {!showCompleted && completedCount > 0 && pendingCount === 0
+            ? "Everything is done. Tick Show completed to see finished tasks."
+            : "No tasks match these filters."}
+        </p>
       ) : (
         grouped.map((group) => (
           <section key={group.name} className="mb-5">

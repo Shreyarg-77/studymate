@@ -73,6 +73,9 @@ router.put(
       updates.completedAt = null;
     }
 
+    if (updates.completed !== undefined) {
+      updates.autoCompleted = false;
+    }
     const task = await Task.findOneAndUpdate(
       { _id: req.params.id, user: req.user._id },
       updates,

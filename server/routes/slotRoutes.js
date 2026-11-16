@@ -198,7 +198,47 @@ router.patch(
       { new: true },
     );
     if (!slot) return res.status(404).json({ message: "Slot not found" });
-    res.json(slot);
+
+    // A task is finished when all of its estimated minutes are done.
+    let task = await Task.findOne({
+      _id: slot.task,
+      user: req.user._id,
+    }).lean();
+    if (task) {
+      const [row] = await StudySlot.aggregate([
+        { $match: { user: req.user._id, task: task._id, status: "done" } },
+        { $group: { _id: null, minutes: { $sum: "$minutes" } } },
+      ]);
+      const doneMinutes = row ? row.minutes : 0;
+      const estimate = task.estimatedMins ?? 60;
+
+      if (status === "done" && !task.completed && doneMinutes >= estimate) {
+        task = await Task.findOneAndUpdate(
+          { _id: task._id, user: req.user._id },
+          { completed: true, completedAt: new Date(), autoCompleted: true },
+          { new: true },
+        ).lean();
+        await StudySlot.deleteMany({
+          user: req.user._id,
+          task: task._id,
+          status: "planned",
+        });
+      } else if (
+        status !== "done" &&
+        task.completed &&
+        task.autoCompleted &&
+        doneMinutes < estimate
+      ) {
+        task = await Task.findOneAndUpdate(
+          { _id: task._id, user: req.user._id },
+          { completed: false, completedAt: null, autoCompleted: false },
+          { new: true },
+        ).lean();
+      }
+    }
+
+    // The slot fields stay at the top level, plus the task's current state.
+    res.json({ ...slot.toObject(), updatedTask: task || null });
   }),
 );
 
