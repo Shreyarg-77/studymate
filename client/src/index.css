@@ -28,3 +28,7 @@ body {
     height: 1.25rem;
   }
 }
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}

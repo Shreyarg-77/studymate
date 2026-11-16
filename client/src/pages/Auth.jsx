@@ -15,6 +15,7 @@ function AuthForm({ mode }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState(location.state?.email || "");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const slow = useSlowFlag(submitting);
@@ -80,18 +81,31 @@ function AuthForm({ mode }) {
             maxLength={254}
             className={inputClass}
           />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={
-              isRegister ? "Password (8 to 72 characters)" : "Password"
-            }
-            autoComplete={isRegister ? "new-password" : "current-password"}
-            autoFocus={justRegistered}
-            maxLength={72}
-            className={inputClass}
-          />
+
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={
+                isRegister ? "Password (8 to 72 characters)" : "Password"
+              }
+              autoComplete={isRegister ? "new-password" : "current-password"}
+              autoFocus={justRegistered}
+              maxLength={72}
+              className={`${inputClass} pr-11`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((visible) => !visible)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+              title={showPassword ? "Hide password" : "Show password"}
+              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-lg text-slate-500 hover:text-slate-800"
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
+          </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 

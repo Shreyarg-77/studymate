@@ -9,7 +9,8 @@
     "test:unit": "node --test services/slotScheduler.test.js",
     "test:api": "node scripts/smoke-test.js && node scripts/robustness-test.js",
     "test:security": "node scripts/security-test.js",
-    "test": "npm run test:unit && npm run test:api && npm run test:security"
+    "test": "npm run test:unit && npm run test:api && npm run test:security",
+    "cleanup:test-data": "node scripts/cleanup-test-data.js"
   },
   "keywords": [],
   "author": "",
