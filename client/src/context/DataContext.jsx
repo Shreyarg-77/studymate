@@ -109,6 +109,10 @@ export function DataProvider({ children }) {
     return res.data;
   }
 
+  function replaceTask(task) {
+    setTasks((prev) => prev.map((t) => (t._id === task._id ? task : t)));
+  }
+
   async function updateTask(id, changes) {
     const res = await api.put(`/tasks/${id}`, changes);
     setTasks((prev) => prev.map((t) => (t._id === id ? res.data : t)));
@@ -164,6 +168,7 @@ export function DataProvider({ children }) {
     deleteClass,
     addTask,
     updateTask,
+    replaceTask,
     deleteTask,
     createNote,
     changeNoteLocally,

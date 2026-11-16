@@ -76,7 +76,8 @@ const fetchMissed = () =>
 
 function StudyPlan() {
   const { user } = useAuth();
-  const { tasks, subjects, timetable, loading, loadError } = useData();
+  const { tasks, subjects, timetable, loading, loadError, replaceTask } =
+    useData();
   const userId = user?.id;
 
   const [date, setDate] = useState(todayStr);
@@ -94,6 +95,8 @@ function StudyPlan() {
   const [missed, setMissed] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerDirty, setPickerDirty] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+  const [notice, setNotice] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +139,7 @@ function StudyPlan() {
     setUnplanned(loadDay(UNPLANNED, userId, next));
     setSummary(null);
     setError("");
+    setNotice(null);
     setPickerDirty(false);
     setFetching(true);
   }
@@ -165,6 +169,7 @@ function StudyPlan() {
     }
     setBusy(true);
     setError("");
+    setNotice(null);
     try {
       const res = await api.post("/slots/generate", {
         date,
@@ -194,10 +199,40 @@ function StudyPlan() {
     setError("");
     try {
       const res = await api.patch(`/slots/${slot._id}`, { status });
-      setSlots((prev) => prev.map((s) => (s._id === slot._id ? res.data : s)));
+      const { updatedTask, ...updatedSlot } = res.data;
+      setSlots((prev) =>
+        prev.map((s) => (s._id === slot._id ? updatedSlot : s)),
+      );
+
+      const before = tasks.find((t) => t._id === slot.task);
+      if (updatedTask) {
+        replaceTask(updatedTask);
+        if (before && before.completed !== updatedTask.completed) {
+          // The server removed or kept this task's other planned slots, so reload the day.
+          const fresh = await api.get("/slots", { params: { date } });
+          setSlots(fresh.data);
+        }
+      }
+
+      if (status === "done") {
+        setNotice({
+          slotId: slot._id,
+          text: `Done: ${before ? before.title : "study session"} (${slot.minutes} min).${
+            updatedTask?.completed ? " The task is now complete." : ""
+          }`,
+        });
+      } else {
+        setNotice(null);
+      }
     } catch (err) {
       setError(errorMessage(err));
     }
+  }
+
+  function undoNotice() {
+    const slot = slots.find((s) => s._id === notice.slotId);
+    setNotice(null);
+    if (slot) setStatus(slot, "planned");
   }
 
   if (loading) return <p className="text-sm text-slate-500">Loading...</p>;
@@ -219,18 +254,22 @@ function StudyPlan() {
       subject: subjects.find((s) => s._id === c.subject),
     }));
 
-  const slotItems = slots.map((s) => {
-    const task = tasks.find((t) => t._id === s.task);
-    return {
-      kind: "slot",
-      key: s._id,
-      start: s.start,
-      end: s.end,
-      slot: s,
-      task,
-      subject: task ? subjects.find((x) => x._id === task.subject) : null,
-    };
-  });
+  const doneCount = slots.filter((s) => s.status === "done").length;
+
+  const slotItems = slots
+    .filter((s) => showDone || s.status !== "done")
+    .map((s) => {
+      const task = tasks.find((t) => t._id === s.task);
+      return {
+        kind: "slot",
+        key: s._id,
+        start: s.start,
+        end: s.end,
+        slot: s,
+        task,
+        subject: task ? subjects.find((x) => x._id === task.subject) : null,
+      };
+    });
 
   const items = [...classItems, ...slotItems].sort((a, b) =>
     a.start.localeCompare(b.start),
@@ -337,6 +376,27 @@ function StudyPlan() {
       )}
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
+      {notice && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-green-200 bg-green-50 p-3">
+          <p className="text-sm text-green-900">{notice.text}</p>
+          <div className="flex gap-3 text-sm">
+            <button
+              onClick={undoNotice}
+              className="font-medium text-green-800 underline"
+            >
+              Undo
+            </button>
+            <button
+              onClick={() => setNotice(null)}
+              aria-label="Dismiss"
+              className="text-green-700"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {showMissed && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3">
@@ -519,11 +579,24 @@ function StudyPlan() {
         </p>
       )}
 
+      {doneCount > 0 && (
+        <div className="mb-2 flex justify-end">
+          <button
+            onClick={() => setShowDone((show) => !show)}
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            {showDone ? "Hide done slots" : `Show done slots (${doneCount})`}
+          </button>
+        </div>
+      )}
+
       {fetching ? (
         <p className="text-sm text-slate-500">Loading plan...</p>
       ) : items.length === 0 ? (
         <p className="text-sm text-slate-500">
-          No classes or study slots on this day yet.
+          {doneCount > 0 && !showDone
+            ? "Everything planned for this day is done."
+            : "No classes or study slots on this day yet."}
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
