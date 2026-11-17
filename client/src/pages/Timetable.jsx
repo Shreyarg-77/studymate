@@ -33,7 +33,8 @@ function Timetable() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const existing = subjects.find(
+  const classSubjects = subjects.filter((s) => s.type !== "personal");
+  const existing = classSubjects.find(
     (s) => s.name.toLowerCase() === name.trim().toLowerCase(),
   );
   const shownType = existing ? existing.type : type;
@@ -154,7 +155,7 @@ function Timetable() {
   if (loadError) return <p className="text-sm text-red-600">{loadError}</p>;
 
   const theoryCount = subjects.filter((s) => s.type === "theory").length;
-  const practicalCount = subjects.length - theoryCount;
+  const practicalCount = subjects.filter((s) => s.type === "practical").length;
 
   const inputClass =
     "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500";
@@ -163,8 +164,8 @@ function Timetable() {
     <div className="mx-auto max-w-4xl">
       <h2 className="mb-1 text-2xl font-bold">Timetable</h2>
       <p className="mb-4 text-sm text-slate-500">
-        {subjects.length} subjects: {theoryCount} theory, {practicalCount}{" "}
-        practical · {timetable.length} classes per week
+        {theoryCount + practicalCount} subjects: {theoryCount} theory,{" "}
+        {practicalCount} practical · {timetable.length} classes per week
       </p>
 
       <form
@@ -189,7 +190,7 @@ function Timetable() {
             className={`${inputClass} w-full`}
           />
           <datalist id="subject-names">
-            {subjects.map((s) => (
+            {classSubjects.map((s) => (
               <option key={s._id} value={s.name} />
             ))}
           </datalist>

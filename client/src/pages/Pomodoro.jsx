@@ -21,7 +21,7 @@ const RADIUS = 90;
 const CIRC = 2 * Math.PI * RADIUS;
 
 function Pomodoro() {
-  const { tasks } = useData();
+  const { tasks, subjects } = useData();
   const p = usePomodoro();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -181,7 +181,8 @@ function Pomodoro() {
           <option value="">No task selected</option>
           {incompleteTasks.map((t) => (
             <option key={t._id} value={t._id}>
-              {t.title}
+              {t.title} ·{" "}
+              {subjects.find((s) => s._id === t.subject)?.name || "No subject"}
             </option>
           ))}
         </select>

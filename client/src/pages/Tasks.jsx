@@ -5,10 +5,32 @@ import { useData } from "../context/DataContext";
 import { errorMessage } from "../api/client";
 
 const CATEGORIES_BY_TYPE = {
-  theory: ["Assignment", "Tutorial", "Homework"],
-  practical: ["Practical", "Assignment"],
+  theory: ["Assignment", "Tutorial", "Homework", "Revision"],
+  practical: ["Practical", "Assignment", "Revision"],
+  personal: ["Project", "Practice", "Revision", "Reading", "Other"],
 };
-const ALL_CATEGORIES = ["Assignment", "Tutorial", "Homework", "Practical"];
+const categoriesFor = (subject) =>
+  (subject && CATEGORIES_BY_TYPE[subject.type]) || CATEGORIES_BY_TYPE.theory;
+
+const ALL_CATEGORIES = [
+  "Assignment",
+  "Tutorial",
+  "Homework",
+  "Practical",
+  "Revision",
+  "Project",
+  "Practice",
+  "Reading",
+  "Other",
+];
+
+const PERSONAL_SUGGESTIONS = [
+  "Personal project",
+  "Aptitude practice",
+  "Coding practice",
+  "Exam preparation",
+  "Reading",
+];
 
 const PRIORITY_STYLES = {
   High: "bg-red-100 text-red-700",
@@ -24,6 +46,7 @@ const GROUP_ORDER = [
   "Completed",
 ];
 const ESTIMATE_PRESETS = [30, 60, 90, 120];
+const NEW_SUBJECT = "__new__";
 
 function daysLeft(task) {
   return differenceInCalendarDays(parseISO(task.dueDate), new Date());
@@ -72,6 +95,7 @@ function Tasks() {
     addTask,
     updateTask,
     deleteTask,
+    addSubject,
   } = useData();
 
   const [subjectId, setSubjectId] = useState("");
@@ -84,20 +108,57 @@ function Tasks() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [addingPersonal, setAddingPersonal] = useState(false);
+  const [personalName, setPersonalName] = useState("");
+  const [personalBusy, setPersonalBusy] = useState(false);
+
   const [filterSubject, setFilterSubject] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [showCompleted, setShowCompleted] = useState(false);
 
+  const classSubjects = subjects.filter((s) => s.type !== "personal");
+  const personalSubjects = subjects.filter((s) => s.type === "personal");
+
   const selectedSubject = subjects.find((s) => s._id === subjectId);
-  const categoryOptions = selectedSubject
-    ? CATEGORIES_BY_TYPE[selectedSubject.type]
-    : [];
+  const categoryOptions = selectedSubject ? categoriesFor(selectedSubject) : [];
 
   function handleSubjectChange(e) {
     const id = e.target.value;
+    if (id === NEW_SUBJECT) {
+      setAddingPersonal(true);
+      setSubjectId("");
+      setCategory("");
+      return;
+    }
+    setAddingPersonal(false);
     setSubjectId(id);
     const subject = subjects.find((s) => s._id === id);
-    setCategory(subject ? CATEGORIES_BY_TYPE[subject.type][0] : "");
+    setCategory(subject ? categoriesFor(subject)[0] : "");
+  }
+
+  async function createPersonal(rawName) {
+    const clean = rawName.trim();
+    if (!clean) {
+      setError("Enter a name for the personal subject.");
+      return;
+    }
+    setError("");
+    setPersonalBusy(true);
+    try {
+      const existing = subjects.find(
+        (s) => s.name.toLowerCase() === clean.toLowerCase(),
+      );
+      const subject =
+        existing || (await addSubject({ name: clean, type: "personal" }));
+      setSubjectId(subject._id);
+      setCategory(categoriesFor(subject)[0]);
+      setAddingPersonal(false);
+      setPersonalName("");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPersonalBusy(false);
+    }
   }
 
   function resetForm() {
@@ -110,6 +171,7 @@ function Tasks() {
 
   function startEdit(task) {
     setEditingId(task._id);
+    setAddingPersonal(false);
     setSubjectId(task.subject);
     setCategory(task.category);
     setTitle(task.title);
@@ -134,7 +196,7 @@ function Tasks() {
     const data = {
       title: title.trim(),
       subject: subjectId,
-      category,
+      category: category || categoriesFor(selectedSubject)[0],
       dueDate,
       priority,
       estimatedMins: mins,
@@ -199,15 +261,15 @@ function Tasks() {
     return (
       <li
         key={task._id}
-        className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3"
+        className="flex flex-wrap items-start gap-3 rounded-lg border border-slate-200 bg-white p-3"
       >
         <input
           type="checkbox"
           checked={task.completed}
           onChange={() => toggleTask(task)}
-          className="h-4 w-4"
+          className="mt-1 h-4 w-4"
         />
-        <div className="flex-1">
+        <div className="min-w-[10rem] flex-1">
           <p
             className={
               task.completed ? "text-slate-400 line-through" : "font-medium"
@@ -237,7 +299,7 @@ function Tasks() {
             </span>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex w-full justify-end gap-4 sm:w-auto">
           {!task.completed && (
             <button
               onClick={() => startEdit(task)}
@@ -261,122 +323,189 @@ function Tasks() {
     <div className="mx-auto max-w-2xl">
       <h2 className="mb-4 text-2xl font-bold">Tasks</h2>
 
-      {subjects.length === 0 ? (
-        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Add your classes in the timetable first so tasks can be linked to
-          subjects.{" "}
+      {subjects.length === 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Add your classes in the{" "}
           <Link to="/timetable" className="font-medium underline">
-            Go to Timetable
-          </Link>
+            Timetable
+          </Link>{" "}
+          to get class subjects, or add a personal subject below for projects
+          and self-study.
         </div>
-      ) : (
-        <form
-          onSubmit={handleSubmit}
-          className="mb-4 grid gap-2 sm:grid-cols-2"
+      )}
+
+      <form
+        onSubmit={handleSubmit}
+        className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2"
+      >
+        <select
+          value={addingPersonal ? NEW_SUBJECT : subjectId}
+          onChange={handleSubjectChange}
+          className={inputClass}
         >
-          <select
-            value={subjectId}
-            onChange={handleSubjectChange}
-            className={inputClass}
-          >
-            <option value="">Select subject</option>
-            {subjects.map((s) => (
-              <option key={s._id} value={s._id}>
-                {s.name} ({s.type})
-              </option>
-            ))}
-          </select>
+          <option value="">Select subject</option>
+          {classSubjects.length > 0 && (
+            <optgroup label="Class subjects">
+              {classSubjects.map((s) => (
+                <option key={s._id} value={s._id}>
+                  {s.name} ({s.type})
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {personalSubjects.length > 0 && (
+            <optgroup label="Personal / self-study">
+              {personalSubjects.map((s) => (
+                <option key={s._id} value={s._id}>
+                  {s.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          <option value={NEW_SUBJECT}>+ Add a personal subject...</option>
+        </select>
 
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            disabled={!selectedSubject}
-            className={inputClass}
-          >
-            {!selectedSubject && <option value="">Category</option>}
-            {categoryOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          disabled={!selectedSubject}
+          className={inputClass}
+        >
+          {!selectedSubject && <option value="">Category</option>}
+          {categoryOptions.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
 
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Task title"
-            maxLength={120}
-            className={`${inputClass} sm:col-span-2`}
-          />
-
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className={inputClass}
-          />
-
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-            className={inputClass}
-          >
-            <option>High</option>
-            <option>Medium</option>
-            <option>Low</option>
-          </select>
-
-          <div className="sm:col-span-2">
-            <label className="mb-1 block text-xs font-medium text-slate-500">
-              Estimated time (minutes)
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="number"
-                min="5"
-                max="600"
-                step="5"
-                value={estimate}
-                onChange={(e) => setEstimate(e.target.value)}
-                className={`${inputClass} w-28`}
-              />
-              {ESTIMATE_PRESETS.map((n) => (
+        {addingPersonal && (
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 sm:col-span-2">
+            <p className="mb-2 text-xs font-medium text-indigo-900">
+              New personal subject. It is for projects, practice and other
+              self-study, and never appears in your timetable.
+            </p>
+            <div className="mb-2 flex flex-wrap gap-2">
+              {PERSONAL_SUGGESTIONS.map((suggestion) => (
                 <button
                   type="button"
-                  key={n}
-                  onClick={() => setEstimate(String(n))}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                    estimate === String(n)
-                      ? "border-indigo-600 bg-indigo-50 text-indigo-600"
-                      : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
-                  }`}
+                  key={suggestion}
+                  onClick={() => createPersonal(suggestion)}
+                  disabled={personalBusy}
+                  className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
                 >
-                  {n}
+                  {suggestion}
                 </button>
               ))}
             </div>
-          </div>
-
-          <div className="flex gap-2 sm:col-span-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {saving ? "Saving..." : editingId ? "Save changes" : "Add task"}
-            </button>
-            {editingId && (
+            <div className="flex gap-2">
+              <input
+                value={personalName}
+                onChange={(e) => setPersonalName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    createPersonal(personalName);
+                  }
+                }}
+                placeholder="Or type your own, e.g. Hackathon app"
+                maxLength={40}
+                className={`${inputClass} min-w-0 flex-1`}
+              />
               <button
                 type="button"
-                onClick={resetForm}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                onClick={() => createPersonal(personalName)}
+                disabled={personalBusy}
+                className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddingPersonal(false)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
               >
                 Cancel
               </button>
-            )}
+            </div>
           </div>
-        </form>
-      )}
+        )}
+
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Task title"
+          maxLength={120}
+          className={`${inputClass} sm:col-span-2`}
+        />
+
+        <input
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className={inputClass}
+        />
+
+        <select
+          value={priority}
+          onChange={(e) => setPriority(e.target.value)}
+          className={inputClass}
+        >
+          <option>High</option>
+          <option>Medium</option>
+          <option>Low</option>
+        </select>
+
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs font-medium text-slate-500">
+            Estimated time (minutes)
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="number"
+              min="5"
+              max="600"
+              step="5"
+              value={estimate}
+              onChange={(e) => setEstimate(e.target.value)}
+              className={`${inputClass} w-28`}
+            />
+            {ESTIMATE_PRESETS.map((n) => (
+              <button
+                type="button"
+                key={n}
+                onClick={() => setEstimate(String(n))}
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                  estimate === String(n)
+                    ? "border-indigo-600 bg-indigo-50 text-indigo-600"
+                    : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 sm:col-span-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+          >
+            {saving ? "Saving..." : editingId ? "Save changes" : "Add task"}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 

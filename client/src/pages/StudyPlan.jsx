@@ -76,8 +76,15 @@ const fetchMissed = () =>
 
 function StudyPlan() {
   const { user } = useAuth();
-  const { tasks, subjects, timetable, loading, loadError, replaceTask } =
-    useData();
+  const {
+    tasks,
+    subjects,
+    timetable,
+    loading,
+    loadError,
+    replaceTask,
+    updateTask,
+  } = useData();
   const userId = user?.id;
 
   const [date, setDate] = useState(todayStr);
@@ -199,7 +206,7 @@ function StudyPlan() {
     setError("");
     try {
       const res = await api.patch(`/slots/${slot._id}`, { status });
-      const { updatedTask, ...updatedSlot } = res.data;
+      const { updatedTask, progress, ...updatedSlot } = res.data;
       setSlots((prev) =>
         prev.map((s) => (s._id === slot._id ? updatedSlot : s)),
       );
@@ -208,18 +215,28 @@ function StudyPlan() {
       if (updatedTask) {
         replaceTask(updatedTask);
         if (before && before.completed !== updatedTask.completed) {
-          // The server removed or kept this task's other planned slots, so reload the day.
           const fresh = await api.get("/slots", { params: { date } });
           setSlots(fresh.data);
         }
       }
 
       if (status === "done") {
+        const title = before ? before.title : "study session";
+        let text;
+        if (updatedTask?.completed) {
+          text =
+            progress && progress.doneMinutes < progress.estimate
+              ? `Done: ${title}. Nothing else is planned for it, so the task is marked complete (${progress.doneMinutes} of ${progress.estimate} min done). Undo if you still need to do the rest.`
+              : `Done: ${title} (${slot.minutes} min). All of its time is done, so the task is complete.`;
+        } else {
+          text = `Done: ${title} (${slot.minutes} min). More time is still planned for it. If the whole task is finished, mark it complete.`;
+        }
         setNotice({
+          kind: "done",
           slotId: slot._id,
-          text: `Done: ${before ? before.title : "study session"} (${slot.minutes} min).${
-            updatedTask?.completed ? " The task is now complete." : ""
-          }`,
+          taskId: slot.task,
+          offerFinish: Boolean(updatedTask) && !updatedTask.completed,
+          text,
         });
       } else {
         setNotice(null);
@@ -233,6 +250,39 @@ function StudyPlan() {
     const slot = slots.find((s) => s._id === notice.slotId);
     setNotice(null);
     if (slot) setStatus(slot, "planned");
+  }
+
+  async function finishTask() {
+    const { taskId } = notice;
+    setNotice(null);
+    setError("");
+    try {
+      const updated = await updateTask(taskId, { completed: true });
+      const fresh = await api.get("/slots", { params: { date } });
+      setSlots(fresh.data);
+      setNotice({
+        kind: "finished",
+        taskId,
+        text: `${updated.title} is marked complete, and its remaining planned slots were removed.`,
+      });
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function reopenTask() {
+    const { taskId } = notice;
+    setNotice(null);
+    setError("");
+    try {
+      await updateTask(taskId, { completed: false });
+      setNotice({
+        kind: "info",
+        text: "The task is open again. Click Regenerate plan to plan its remaining time.",
+      });
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   if (loading) return <p className="text-sm text-slate-500">Loading...</p>;
@@ -380,13 +430,31 @@ function StudyPlan() {
       {notice && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-green-200 bg-green-50 p-3">
           <p className="text-sm text-green-900">{notice.text}</p>
-          <div className="flex gap-3 text-sm">
-            <button
-              onClick={undoNotice}
-              className="font-medium text-green-800 underline"
-            >
-              Undo
-            </button>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            {notice.kind === "done" && notice.offerFinish && (
+              <button
+                onClick={finishTask}
+                className="font-medium text-green-800 underline"
+              >
+                Mark whole task complete
+              </button>
+            )}
+            {notice.kind === "done" && (
+              <button
+                onClick={undoNotice}
+                className="font-medium text-green-800 underline"
+              >
+                Undo
+              </button>
+            )}
+            {notice.kind === "finished" && (
+              <button
+                onClick={reopenTask}
+                className="font-medium text-green-800 underline"
+              >
+                Undo
+              </button>
+            )}
             <button
               onClick={() => setNotice(null)}
               aria-label="Dismiss"
