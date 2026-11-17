@@ -2,10 +2,16 @@ import { useState } from "react";
 import { useData } from "../context/DataContext";
 import { errorMessage } from "../api/client";
 
+const TYPE_LABELS = {
+  theory: "Theory",
+  practical: "Practical",
+  personal: "Personal",
+};
+
 function Subjects() {
   const { subjects, loading, loadError, addSubject, deleteSubject } = useData();
   const [name, setName] = useState("");
-  const [type, setType] = useState("theory");
+  const [type, setType] = useState("personal");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -46,14 +52,20 @@ function Subjects() {
   if (loadError) return <p className="text-sm text-red-600">{loadError}</p>;
 
   const theoryCount = subjects.filter((s) => s.type === "theory").length;
-  const practicalCount = subjects.length - theoryCount;
+  const practicalCount = subjects.filter((s) => s.type === "practical").length;
+  const personalCount = subjects.filter((s) => s.type === "personal").length;
 
   return (
     <div className="mx-auto max-w-2xl">
       <h2 className="mb-1 text-2xl font-bold">Subjects</h2>
-      <p className="mb-4 text-sm text-slate-500">
-        {subjects.length} subjects: {theoryCount} theory, {practicalCount}{" "}
-        practical
+      <p className="mb-1 text-sm text-slate-500">
+        {theoryCount + practicalCount} class subjects ({theoryCount} theory,{" "}
+        {practicalCount} practical) · {personalCount} personal
+      </p>
+      <p className="mb-4 text-xs text-slate-400">
+        Class subjects are created from your timetable. Personal subjects are
+        for projects, aptitude practice and other self-study, and never appear
+        in the timetable.
       </p>
 
       <form
@@ -63,7 +75,7 @@ function Subjects() {
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Subject name (e.g. Physics)"
+          placeholder="Subject name (e.g. Aptitude practice)"
           maxLength={40}
           className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500"
         />
@@ -72,6 +84,7 @@ function Subjects() {
           onChange={(e) => setType(e.target.value)}
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500"
         >
+          <option value="personal">Personal</option>
           <option value="theory">Theory</option>
           <option value="practical">Practical</option>
         </select>
@@ -88,7 +101,8 @@ function Subjects() {
 
       {subjects.length === 0 ? (
         <p className="mt-4 text-sm text-slate-500">
-          No subjects yet. Add the ones from your timetable.
+          No subjects yet. Add your classes in the Timetable, or add a personal
+          subject here.
         </p>
       ) : (
         <ul className="mt-4 flex flex-col gap-2">
@@ -101,9 +115,11 @@ function Subjects() {
                 className="h-3 w-3 rounded-full"
                 style={{ backgroundColor: s.color }}
               />
-              <span className="flex-1 font-medium">{s.name}</span>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600">
-                {s.type}
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {s.name}
+              </span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                {TYPE_LABELS[s.type] || s.type}
               </span>
               <button
                 onClick={() => handleDelete(s)}
