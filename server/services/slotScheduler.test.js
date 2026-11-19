@@ -262,3 +262,64 @@ test("a very short task is still scheduled", () => {
   assert.equal(slots.length, 1);
   assert.equal(slots[0].minutes, 10);
 });
+
+test("a daily limit caps how much one task gets in a day", () => {
+  const tasks = [
+    {
+      id: "a",
+      priority: "High",
+      dueDate: "",
+      estimatedMins: 300,
+      dailyMins: 60,
+    },
+  ];
+  const r = generateSlots({
+    date: MONDAY,
+    tasks,
+    prefs: { dayStart: "09:00", dayEnd: "18:00" },
+  });
+  assert.equal(r.plannedMinutes, 60);
+  assert.deepEqual(r.unscheduled, []);
+});
+
+test("a limited task leaves room for other tasks", () => {
+  const tasks = [
+    {
+      id: "a",
+      priority: "High",
+      dueDate: "",
+      estimatedMins: 300,
+      dailyMins: 60,
+    },
+    { id: "b", priority: "Low", dueDate: "", estimatedMins: 60 },
+  ];
+  const { slots } = generateSlots({
+    date: MONDAY,
+    tasks,
+    prefs: { dayStart: "09:00", dayEnd: "18:00" },
+  });
+  const total = (id) =>
+    slots.filter((s) => s.task === id).reduce((n, s) => n + s.minutes, 0);
+  assert.equal(total("a"), 60);
+  assert.equal(total("b"), 60);
+});
+
+test("minutes already done today count against the daily limit", () => {
+  const tasks = [
+    {
+      id: "a",
+      priority: "High",
+      dueDate: "",
+      estimatedMins: 300,
+      dailyMins: 90,
+    },
+  ];
+  const keptSlots = [{ start: "09:00", end: "10:00", task: "a", minutes: 60 }];
+  const r = generateSlots({
+    date: MONDAY,
+    tasks,
+    keptSlots,
+    prefs: { dayStart: "09:00", dayEnd: "18:00" },
+  });
+  assert.equal(r.plannedMinutes, 30);
+});

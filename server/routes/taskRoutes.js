@@ -15,6 +15,7 @@ const ALLOWED = [
   "dueDate",
   "priority",
   "estimatedMins",
+  "dailyMins",
   "completed",
 ];
 
@@ -28,8 +29,15 @@ router.get(
 router.post(
   "/",
   asyncHandler(async (req, res) => {
-    const { title, subject, category, dueDate, priority, estimatedMins } =
-      req.body;
+    const {
+      title,
+      subject,
+      category,
+      dueDate,
+      priority,
+      estimatedMins,
+      dailyMins,
+    } = req.body;
     if (!subject) throw httpError(400, "Subject is required");
     await assertOwnsSubject(subject, req.user._id);
     const task = await Task.create({
@@ -40,6 +48,7 @@ router.post(
       dueDate,
       priority,
       estimatedMins,
+      dailyMins,
     });
     res.status(201).json(task);
   }),
@@ -69,13 +78,9 @@ router.put(
     if (updates.completed === true && !existing.completed) {
       updates.completedAt = new Date();
     }
-    if (updates.completed === false) {
-      updates.completedAt = null;
-    }
+    if (updates.completed === false) updates.completedAt = null;
+    if (updates.completed !== undefined) updates.autoCompleted = false;
 
-    if (updates.completed !== undefined) {
-      updates.autoCompleted = false;
-    }
     const task = await Task.findOneAndUpdate(
       { _id: req.params.id, user: req.user._id },
       updates,

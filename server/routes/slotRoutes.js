@@ -125,13 +125,18 @@ router.post(
       date,
       classes,
       blocked: settings.blockedTimes,
-      keptSlots: keptSlots.map((s) => ({ start: s.start, end: s.end })),
+      keptSlots: keptSlots.map((s) => ({
+        start: s.start,
+        end: s.end,
+        task: String(s.task),
+        minutes: s.minutes,
+      })),
       tasks: tasks.map((t) => ({
         id: String(t._id),
         priority: t.priority,
         dueDate: t.dueDate,
         estimatedMins: t.estimatedMins,
-        completed: t.completed,
+        dailyMins: t.dailyMins,
       })),
       committed,
       prefs: {
