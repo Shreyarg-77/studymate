@@ -33,7 +33,17 @@ const taskSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ["Assignment", "Tutorial", "Homework", "Practical"],
+      enum: [
+        "Assignment",
+        "Tutorial",
+        "Homework",
+        "Practical",
+        "Revision",
+        "Project",
+        "Practice",
+        "Reading",
+        "Other",
+      ],
       default: "Assignment",
     },
     dueDate: {
@@ -57,6 +67,17 @@ const taskSchema = new mongoose.Schema(
       validate: {
         validator: Number.isInteger,
         message: "Estimate must be a whole number of minutes",
+      },
+    },
+    // Optional: the most minutes the plan may give this task in one day.
+    dailyMins: {
+      type: Number,
+      default: null,
+      min: [15, "Daily limit must be at least 15 minutes"],
+      max: [600, "Daily limit can be at most 600 minutes"],
+      validate: {
+        validator: (v) => v == null || Number.isInteger(v),
+        message: "Daily limit must be a whole number of minutes",
       },
     },
     completed: { type: Boolean, default: false },

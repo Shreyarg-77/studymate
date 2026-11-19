@@ -125,13 +125,18 @@ router.post(
       date,
       classes,
       blocked: settings.blockedTimes,
-      keptSlots: keptSlots.map((s) => ({ start: s.start, end: s.end })),
+      keptSlots: keptSlots.map((s) => ({
+        start: s.start,
+        end: s.end,
+        task: String(s.task),
+        minutes: s.minutes,
+      })),
       tasks: tasks.map((t) => ({
         id: String(t._id),
         priority: t.priority,
         dueDate: t.dueDate,
         estimatedMins: t.estimatedMins,
-        completed: t.completed,
+        dailyMins: t.dailyMins,
       })),
       committed,
       prefs: {
@@ -199,20 +204,41 @@ router.patch(
     );
     if (!slot) return res.status(404).json({ message: "Slot not found" });
 
-    // A task is finished when all of its estimated minutes are done.
     let task = await Task.findOne({
       _id: slot.task,
       user: req.user._id,
     }).lean();
-    if (task) {
-      const [row] = await StudySlot.aggregate([
-        { $match: { user: req.user._id, task: task._id, status: "done" } },
-        { $group: { _id: null, minutes: { $sum: "$minutes" } } },
-      ]);
-      const doneMinutes = row ? row.minutes : 0;
-      const estimate = task.estimatedMins ?? 60;
+    let progress = null;
 
-      if (status === "done" && !task.completed && doneMinutes >= estimate) {
+    if (task) {
+      const sums = await StudySlot.aggregate([
+        {
+          $match: {
+            user: req.user._id,
+            task: task._id,
+            status: { $in: ["done", "planned"] },
+          },
+        },
+        {
+          $group: {
+            _id: "$status",
+            minutes: { $sum: "$minutes" },
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+      const pick = (s) =>
+        sums.find((x) => x._id === s) || { minutes: 0, count: 0 };
+      const doneMinutes = pick("done").minutes;
+      const estimate = task.estimatedMins ?? 60;
+      progress = { doneMinutes, estimate, plannedLeft: pick("planned").count };
+
+      // Finished: nothing else is planned for it, or all of its time is done.
+      if (
+        status === "done" &&
+        !task.completed &&
+        (progress.plannedLeft === 0 || doneMinutes >= estimate)
+      ) {
         task = await Task.findOneAndUpdate(
           { _id: task._id, user: req.user._id },
           { completed: true, completedAt: new Date(), autoCompleted: true },
@@ -223,12 +249,14 @@ router.patch(
           task: task._id,
           status: "planned",
         });
+        progress.plannedLeft = 0;
       } else if (
         status !== "done" &&
         task.completed &&
         task.autoCompleted &&
         doneMinutes < estimate
       ) {
+        // Undo: a task that finished by itself reopens. Manual completion is never undone here.
         task = await Task.findOneAndUpdate(
           { _id: task._id, user: req.user._id },
           { completed: false, completedAt: null, autoCompleted: false },
@@ -237,9 +265,7 @@ router.patch(
       }
     }
 
-    // The slot fields stay at the top level, plus the task's current state.
-    res.json({ ...slot.toObject(), updatedTask: task || null });
+    res.json({ ...slot.toObject(), updatedTask: task || null, progress });
   }),
 );
-
 export default router;

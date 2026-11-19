@@ -14,7 +14,11 @@ const subjectSchema = new mongoose.Schema(
       trim: true,
       maxlength: [40, "Subject name can be at most 40 characters"],
     },
-    type: { type: String, enum: ["theory", "practical"], default: "theory" },
+    type: {
+      type: String,
+      enum: ["theory", "practical", "personal"],
+      default: "theory",
+    },
     color: {
       type: String,
       default: "#4F46E5",

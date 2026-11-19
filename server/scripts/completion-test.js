@@ -197,6 +197,34 @@ async function run() {
     r.data?.updatedTask?.completed === true,
   );
 
+  section("Nothing else planned means the task is finished");
+  r = await call("PUT", "/settings", {
+    dayStart: "09:00",
+    dayEnd: "10:45",
+    minSlotMins: 30,
+    maxSlotMins: 90,
+    breakMins: 10,
+    blockedTimes: [],
+  });
+  check("a short study day is saved", r.status === 200);
+  const P = await makeTask("Partly planned", 300);
+  const slotsP = await planFor("2030-03-07", P);
+  check(
+    "only part of the task fits in the plan",
+    slotsP.length === 1 && slotsP[0].minutes === 90,
+  );
+  r = await call("PATCH", `/slots/${slotsP[0]._id}`, { status: "done" });
+  check(
+    "marking the only slot done completes the task",
+    r.data?.updatedTask?.completed === true &&
+      r.data?.progress?.plannedLeft === 0,
+  );
+  check(
+    "the response says how much was really done",
+    r.data?.progress?.doneMinutes === 90 && r.data?.progress?.estimate === 300,
+  );
+  r = await call("PATCH", `/slots/${slotsP[0]._id}`, { status: "planned" });
+  check("undo reopens it", r.data?.updatedTask?.completed === false);
   section("Another user");
   const firstToken = token;
   r = await call("POST", "/auth/register", {

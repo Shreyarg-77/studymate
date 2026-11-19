@@ -104,6 +104,7 @@ function Tasks() {
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("Medium");
   const [estimate, setEstimate] = useState("60");
+  const [dailyLimit, setDailyLimit] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -167,6 +168,7 @@ function Tasks() {
     setDueDate("");
     setPriority("Medium");
     setEstimate("60");
+    setDailyLimit("");
   }
 
   function startEdit(task) {
@@ -178,6 +180,7 @@ function Tasks() {
     setDueDate(task.dueDate);
     setPriority(task.priority);
     setEstimate(String(task.estimatedMins ?? 60));
+    setDailyLimit(task.dailyMins ? String(task.dailyMins) : "");
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -193,6 +196,16 @@ function Tasks() {
       setError("Estimated time must be a whole number from 5 to 600 minutes.");
       return;
     }
+    let limit = null;
+    if (dailyLimit.trim() !== "") {
+      limit = Number(dailyLimit);
+      if (!Number.isInteger(limit) || limit < 15 || limit > 600) {
+        setError(
+          "The daily limit must be a whole number from 15 to 600 minutes, or empty.",
+        );
+        return;
+      }
+    }
     const data = {
       title: title.trim(),
       subject: subjectId,
@@ -200,6 +213,7 @@ function Tasks() {
       dueDate,
       priority,
       estimatedMins: mins,
+      dailyMins: limit,
     };
     setSaving(true);
     setError("");
@@ -297,6 +311,11 @@ function Tasks() {
             <span className="rounded-full bg-slate-100 px-2 py-0.5">
               {task.estimatedMins ?? 60} min
             </span>
+            {task.dailyMins ? (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                max {task.dailyMins} min/day
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="flex w-full justify-end gap-4 sm:w-auto">
@@ -320,8 +339,8 @@ function Tasks() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <h2 className="mb-4 text-2xl font-bold">Tasks</h2>
+    <div className="mx-auto max-w-6xl xl:grid xl:grid-cols-[28rem_minmax(0,1fr)] xl:items-start xl:gap-x-8">
+      <h2 className="mb-4 text-2xl font-bold xl:col-span-2">Tasks</h2>
 
       {subjects.length === 0 && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -336,7 +355,7 @@ function Tasks() {
 
       <form
         onSubmit={handleSubmit}
-        className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2"
+        className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:col-start-1 xl:sticky xl:top-6 xl:[grid-row:span_99]"
       >
         <select
           value={addingPersonal ? NEW_SUBJECT : subjectId}
@@ -485,6 +504,26 @@ function Tasks() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs font-medium text-slate-500">
+            Max minutes per day (optional)
+          </label>
+          <input
+            type="number"
+            min="15"
+            max="600"
+            step="15"
+            value={dailyLimit}
+            onChange={(e) => setDailyLimit(e.target.value)}
+            placeholder="No limit"
+            className={`${inputClass} w-28`}
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            For long tasks like projects: the plan gives it at most this much
+            time per day, so the work spreads over several days.
+          </p>
         </div>
 
         <div className="flex gap-2 sm:col-span-2">

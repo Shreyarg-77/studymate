@@ -130,14 +130,24 @@ export function generateSlots({
   const gaps = findFreeGaps(windowStart, windowEnd, busy, p.minSlotMins);
   const freeMinutes = gaps.reduce((sum, g) => sum + (g.end - g.start), 0);
 
+  // Minutes of each task already done or skipped on this day count against its daily limit.
+  const usedToday = {};
+  for (const s of keptSlots) {
+    if (s.task) usedToday[s.task] = (usedToday[s.task] || 0) + (s.minutes || 0);
+  }
+
   const queue = tasks
     .filter((t) => !t.completed)
     .map((t) => ({
       id: t.id,
       score: taskScore(t, date),
       remaining: (t.estimatedMins || DEFAULT_ESTIMATE) - (committed[t.id] || 0),
+      // The most minutes this task may get today (Infinity means no daily limit).
+      dayLeft: t.dailyMins
+        ? Math.max(t.dailyMins - (usedToday[t.id] || 0), 0)
+        : Infinity,
     }))
-    .filter((t) => t.remaining > 0)
+    .filter((t) => t.remaining > 0 && t.dayLeft > 0)
     .sort((a, b) => b.score - a.score);
 
   const slots = [];
@@ -149,16 +159,17 @@ export function generateSlots({
       let placed = false;
 
       for (const t of queue) {
-        if (t.remaining <= 0) continue;
-        let chunk = Math.min(t.remaining, p.maxSlotMins, room);
+        if (t.remaining <= 0 || t.dayLeft <= 0) continue;
+        const limit = Math.min(t.remaining, t.dayLeft);
+        let chunk = Math.min(limit, p.maxSlotMins, room);
         // When splitting, shrink this piece a little so the leftover is not tiny.
-        if (chunk < t.remaining && t.remaining - chunk < PREFERRED_TAIL) {
-          const trimmed = t.remaining - PREFERRED_TAIL;
+        if (chunk < limit && limit - chunk < PREFERRED_TAIL) {
+          const trimmed = limit - PREFERRED_TAIL;
           if (trimmed >= p.minSlotMins) chunk = trimmed;
         }
-        const finishes = chunk === t.remaining;
+        const lastPiece = chunk === limit;
         const valid =
-          chunk >= p.minSlotMins || (finishes && chunk >= MIN_FINAL_CHUNK);
+          chunk >= p.minSlotMins || (lastPiece && chunk >= MIN_FINAL_CHUNK);
         if (!valid) continue;
 
         slots.push({
@@ -168,6 +179,7 @@ export function generateSlots({
           minutes: chunk,
         });
         t.remaining -= chunk;
+        t.dayLeft -= chunk;
         cursor += chunk + p.breakMins;
         placed = true;
         break;
@@ -177,9 +189,10 @@ export function generateSlots({
     }
   }
 
+  // Only time that could have been planned today but did not fit is reported.
   const unscheduled = queue
-    .filter((t) => t.remaining > 0)
-    .map((t) => ({ task: t.id, minutes: t.remaining }));
+    .map((t) => ({ task: t.id, minutes: Math.min(t.remaining, t.dayLeft) }))
+    .filter((u) => u.minutes > 0);
 
   const plannedMinutes = slots.reduce((sum, s) => sum + s.minutes, 0);
 
