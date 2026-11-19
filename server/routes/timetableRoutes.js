@@ -3,6 +3,7 @@ import TimetableEntry from "../models/TimetableEntry.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import httpError from "../utils/httpError.js";
 import { assertOwnsSubject } from "../utils/ownership.js";
+import Subject from "../models/Subject.js";
 
 const router = Router();
 
@@ -49,6 +50,18 @@ router.post(
       throw httpError(400, "End time must be after start time");
     }
     await assertOwnsSubject(subject, req.user._id);
+    const subjectDoc = await Subject.findOne({
+      _id: subject,
+      user: req.user._id,
+    })
+      .select("type")
+      .lean();
+    if (subjectDoc?.type === "personal") {
+      throw httpError(
+        400,
+        "Personal subjects cannot be added to the timetable",
+      );
+    }
 
     for (const day of uniqueDays) {
       const clash = await TimetableEntry.findOne({

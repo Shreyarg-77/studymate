@@ -33,7 +33,17 @@ const taskSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ["Assignment", "Tutorial", "Homework", "Practical"],
+      enum: [
+        "Assignment",
+        "Tutorial",
+        "Homework",
+        "Practical",
+        "Revision",
+        "Project",
+        "Practice",
+        "Reading",
+        "Other",
+      ],
       default: "Assignment",
     },
     dueDate: {
