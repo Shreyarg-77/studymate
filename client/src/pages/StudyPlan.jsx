@@ -359,7 +359,7 @@ function StudyPlan() {
     "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40";
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-3xl">
       <h2 className="mb-1 text-2xl font-bold">Study plan</h2>
       <p className="mb-4 text-sm text-slate-500">
         Free time between your classes, filled with your tasks by priority and

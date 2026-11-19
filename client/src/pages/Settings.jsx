@@ -182,7 +182,7 @@ function Settings() {
   const labelClass = "mb-1 block text-xs font-medium text-slate-500";
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-3xl">
       <h2 className="mb-1 text-2xl font-bold">Settings</h2>
       <p className="mb-4 text-sm text-slate-500">
         These control how your study plan is generated and when you are
