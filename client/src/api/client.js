@@ -7,6 +7,9 @@ const api = axios.create({
   timeout: 90000,
 });
 
+// Changes to these areas make other pages refresh themselves.
+const WATCHED = ["/slots", "/tasks", "/pomodoro", "/timetable", "/settings"];
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -14,7 +17,14 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = (response.config.method || "get").toLowerCase();
+    const url = response.config.url || "";
+    if (method !== "get" && WATCHED.some((path) => url.startsWith(path))) {
+      window.dispatchEvent(new Event("studymate-data-changed"));
+    }
+    return response;
+  },
   (error) => {
     const url = error.config?.url || "";
     const isAuthCall =

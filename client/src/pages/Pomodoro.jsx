@@ -27,7 +27,7 @@ function Pomodoro() {
   const [draft, setDraft] = useState("");
 
   function startEditing() {
-    if (p.running) return;
+    if (p.active) return;
     setDraft(String(p.settings[p.mode]));
     setEditing(true);
   }
@@ -38,6 +38,8 @@ function Pomodoro() {
   }
 
   const incompleteTasks = tasks.filter((t) => !t.completed);
+  const minutesDone = Math.floor(p.elapsedMs / 60000);
+  const minutesToGo = Math.max(p.minFinishMins - minutesDone, 0);
 
   const stepButton =
     "rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100";
@@ -110,15 +112,15 @@ function Pomodoro() {
             <button
               type="button"
               onClick={startEditing}
-              disabled={p.running}
-              title={p.running ? "" : "Click to change the time"}
+              disabled={p.active}
+              title={p.active ? "" : "Click to change the time"}
               className="text-5xl font-bold text-slate-900 enabled:hover:text-indigo-600 disabled:cursor-default"
             >
               {p.timeText}
             </button>
           )}
 
-          {!p.running && !editing && (
+          {!p.active && !editing && (
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
@@ -136,16 +138,37 @@ function Pomodoro() {
               </button>
             </div>
           )}
+
+          {p.active && (
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => p.adjust(-p.adjustMins)}
+                className={stepButton}
+                aria-label={`Remove ${p.adjustMins} minutes`}
+              >
+                −{p.adjustMins} min
+              </button>
+              <button
+                type="button"
+                onClick={() => p.adjust(p.adjustMins)}
+                className={stepButton}
+                aria-label={`Add ${p.adjustMins} minutes`}
+              >
+                +{p.adjustMins} min
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       <p className="mb-6 text-xs text-slate-400">
-        Tap the time to type your own minutes, or use −/+. Each mode remembers
-        its own length on this device. The timer keeps running if you open
-        another page.
+        {p.active
+          ? "While the timer is active you can add or remove 10 minutes. It keeps running if you open another page."
+          : "Tap the time to type your own minutes, or use −/+. Each mode remembers its own length on this device."}
       </p>
 
-      <div className="mb-6 flex justify-center gap-3">
+      <div className="mb-3 flex flex-wrap justify-center gap-3">
         {p.running ? (
           <button
             onClick={p.pause}
@@ -158,7 +181,7 @@ function Pomodoro() {
             onClick={() => p.start()}
             className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-700"
           >
-            Start
+            {p.active ? "Resume" : "Start"}
           </button>
         )}
         <button
@@ -167,7 +190,37 @@ function Pomodoro() {
         >
           Reset
         </button>
+        {p.mode === "focus" && p.active && (
+          <button
+            onClick={p.finishEarly}
+            disabled={!p.canFinish}
+            className="rounded-lg border border-green-600 px-6 py-2 text-sm font-medium text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:hover:bg-transparent"
+          >
+            Finish now
+          </button>
+        )}
       </div>
+
+      {p.mode === "focus" && p.active && (
+        <p className="mb-6 text-xs text-slate-500">
+          {p.canFinish
+            ? `Finish now saves your ${minutesDone} min of focus and starts a break.`
+            : `Finish now unlocks after ${p.minFinishMins} min of focus (${minutesToGo} min to go).`}
+        </p>
+      )}
+
+      {p.notice && (
+        <div className="mb-6 flex items-start justify-between gap-3 rounded-lg border border-green-200 bg-green-50 p-3 text-left">
+          <p className="text-sm text-green-900">{p.notice}</p>
+          <button
+            onClick={p.clearNotice}
+            aria-label="Dismiss"
+            className="text-green-700"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <div className="mb-6 text-left">
         <label className="mb-1 block text-xs font-medium text-slate-500">

@@ -5,12 +5,14 @@ import {
   useEffect,
   useState,
 } from "react";
-import { isToday, parseISO } from "date-fns";
+import { format, isToday, parseISO } from "date-fns";
 import api from "../api/client";
 import useLocalStorage from "../hooks/useLocalStorage";
 
 const DEFAULTS = { focus: 60, short: 5, long: 15, longEvery: 4 };
 const LIMITS = { focus: [1, 180], short: [1, 60], long: [1, 60] };
+const MIN_FINISH_MINS = 20;
+const ADJUST_MINS = 10;
 
 const PomodoroContext = createContext(null);
 
@@ -44,11 +46,13 @@ export function PomodoroProvider({ children }) {
   );
   const [sessions, setSessions] = useState([]);
   const [saveWarning, setSaveWarning] = useState("");
+  const [notice, setNotice] = useState("");
 
   const [mode, setMode] = useState("focus");
   const [running, setRunning] = useState(false);
   const [endTime, setEndTime] = useState(null);
   const [remainingMs, setRemainingMs] = useState(settings.focus * 60000);
+  const [extraMs, setExtraMs] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [cycle, setCycle] = useState(0);
   const [taskId, setTaskId] = useState("");
@@ -66,8 +70,12 @@ export function PomodoroProvider({ children }) {
     };
   }, []);
 
+  const totalMs = settings[mode] * 60000 + extraMs;
   const msLeft = running ? Math.max(endTime - now, 0) : remainingMs;
-  const totalMs = settings[mode] * 60000;
+  const elapsedMs = Math.max(totalMs - msLeft, 0);
+  const active = running || elapsedMs > 0;
+  const canFinish = mode === "focus" && elapsedMs >= MIN_FINISH_MINS * 60000;
+
   const totalSec = Math.ceil(msLeft / 1000);
   const timeText = `${String(Math.floor(totalSec / 60)).padStart(2, "0")}:${String(totalSec % 60).padStart(2, "0")}`;
 
@@ -76,32 +84,63 @@ export function PomodoroProvider({ children }) {
       setMode(next);
       setRunning(false);
       setEndTime(null);
+      setExtraMs(0);
       setRemainingMs(settings[next] * 60000);
     },
     [settings],
   );
 
-  const finishSession = useCallback(() => {
-    beep();
-    if (mode === "focus") {
-      notify("Focus session complete. Time for a break.");
+  const logFocus = useCallback(
+    (minutes) => {
       api
-        .post("/pomodoro", { task: taskId || null, minutes: settings.focus })
+        .post("/pomodoro", {
+          task: taskId || null,
+          minutes,
+          today: format(new Date(), "yyyy-MM-dd"),
+        })
         .then((res) => {
-          setSessions((prev) => [...prev, res.data]);
+          const { updatedTask, progress, ...session } = res.data;
+          setSessions((prev) => [...prev, session]);
           setSaveWarning("");
+          if (updatedTask?.completed && progress) {
+            setNotice(
+              `${updatedTask.title} is complete (${progress.doneMinutes} of ${progress.estimate} min of focus). It has left your plan and task list, and stays in your report.`,
+            );
+            setTaskId("");
+          } else if (progress) {
+            const left = Math.max(progress.estimate - progress.doneMinutes, 0);
+            setNotice(
+              `Saved ${minutes} min. About ${left} min of this task remain.`,
+            );
+          } else {
+            setNotice(`Saved ${minutes} min of focus.`);
+          }
         })
         .catch(() =>
           setSaveWarning("Session finished but could not be saved."),
         );
-      const nextCycle = cycle + 1;
-      setCycle(nextCycle);
-      switchMode(nextCycle % settings.longEvery === 0 ? "long" : "short");
+    },
+    [taskId],
+  );
+
+  const nextAfterFocus = useCallback(() => {
+    const nextCycle = cycle + 1;
+    setCycle(nextCycle);
+    switchMode(nextCycle % settings.longEvery === 0 ? "long" : "short");
+  }, [cycle, settings.longEvery, switchMode]);
+
+  const finishSession = useCallback(() => {
+    beep();
+    if (mode === "focus") {
+      notify("Focus session complete. Time for a break.");
+      logFocus(Math.max(Math.round(totalMs / 60000), 1));
+      nextAfterFocus();
     } else {
       notify("Break over. Ready to focus?");
+      setNotice("");
       switchMode("focus");
     }
-  }, [mode, cycle, settings, taskId, switchMode]);
+  }, [mode, totalMs, logFocus, nextAfterFocus, switchMode]);
 
   useEffect(() => {
     if (!running) return;
@@ -129,6 +168,7 @@ export function PomodoroProvider({ children }) {
     setNow(t);
     setEndTime(t + remainingMs);
     setRunning(true);
+    setNotice("");
     if (
       askPermission &&
       "Notification" in window &&
@@ -148,11 +188,35 @@ export function PomodoroProvider({ children }) {
   function reset() {
     setRunning(false);
     setEndTime(null);
+    setExtraMs(0);
     setRemainingMs(settings[mode] * 60000);
   }
 
+  // Add or remove time while the timer is running or paused.
+  function adjust(minutes) {
+    if (!active) return;
+    const maxTotal = LIMITS[mode][1] * 60000;
+    const current = running ? Math.max(endTime - Date.now(), 0) : remainingMs;
+    let next = Math.max(current + minutes * 60000, 60000);
+    if (totalMs + (next - current) > maxTotal)
+      next = current + (maxTotal - totalMs);
+    const applied = next - current;
+    if (applied === 0) return;
+    setExtraMs((extra) => extra + applied);
+    if (running) setEndTime(Date.now() + next);
+    else setRemainingMs(next);
+  }
+
+  // Stop in the middle: allowed once at least MIN_FINISH_MINS of focus are done.
+  function finishEarly() {
+    if (!canFinish) return;
+    const minutes = Math.min(Math.max(Math.round(elapsedMs / 60000), 1), 180);
+    logFocus(minutes);
+    nextAfterFocus();
+  }
+
   function setDuration(value) {
-    if (running) return;
+    if (active) return;
     const [min, max] = LIMITS[mode];
     const minutes = Math.min(
       Math.max(Math.round(Number(value)) || settings[mode], min),
@@ -171,18 +235,27 @@ export function PomodoroProvider({ children }) {
     settings,
     mode,
     running,
+    active,
     msLeft,
     totalMs,
+    elapsedMs,
     timeText,
     taskId,
     setTaskId,
     saveWarning,
+    notice,
+    clearNotice: () => setNotice(""),
     todaySessions,
     todayMinutes,
     limits: LIMITS[mode],
+    canFinish,
+    minFinishMins: MIN_FINISH_MINS,
+    adjustMins: ADJUST_MINS,
     start,
     pause,
     reset,
+    adjust,
+    finishEarly,
     switchMode,
     setDuration,
   };
