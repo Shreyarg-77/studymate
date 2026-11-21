@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { addDays, format, startOfDay } from "date-fns";
+import { format } from "date-fns";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -43,23 +43,26 @@ function Reminders() {
   const { user } = useAuth();
   const { tasks, timetable, loading } = useData();
   const userId = user?.id;
+  const briefingKey = `studymate-briefing-${userId}`;
+  const remindedKey = `studymate-reminded-${userId}`;
 
   const [settings, setSettings] = useState(null);
-  const [card, setCard] = useState(null);
+  const [todaySlots, setTodaySlots] = useState(null);
+  const [briefing, setBriefing] = useState(() => readJson(briefingKey, {}));
   const [alerts, setAlerts] = useState([]);
+  const [, setMinute] = useState(0);
 
   const tasksRef = useRef(tasks);
   const timetableRef = useRef(timetable);
   const slotsRef = useRef([]);
-  const busyRef = useRef(false);
-  const shownRef = useRef(false);
 
   useEffect(() => {
     tasksRef.current = tasks;
     timetableRef.current = timetable;
+    slotsRef.current = todaySlots || [];
   });
 
-  // Load the reminder settings, and pick up changes made on the Settings page.
+  // Reminder settings, including changes made on the Settings page.
   useEffect(() => {
     let cancelled = false;
     api
@@ -78,116 +81,115 @@ function Reminders() {
     };
   }, []);
 
+  // Today's study slots, refreshed after any change and when the tab is shown again.
+  useEffect(() => {
+    if (loading || !userId) return undefined;
+    let cancelled = false;
+    let timer = null;
+    function load() {
+      api
+        .get("/slots", { params: { date: todayStr() } })
+        .then((res) => {
+          if (!cancelled) setTodaySlots(res.data);
+        })
+        .catch(() => {});
+    }
+    function schedule() {
+      clearTimeout(timer);
+      timer = setTimeout(load, 400);
+    }
+    function onVisible() {
+      if (document.visibilityState === "visible") schedule();
+    }
+    const first = setTimeout(load, 0);
+    const interval = setInterval(load, 120000);
+    window.addEventListener("studymate-data-changed", schedule);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearTimeout(first);
+      clearTimeout(timer);
+      clearInterval(interval);
+      window.removeEventListener("studymate-data-changed", schedule);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [loading, userId]);
+
+  // Re-draw once a minute so slots whose time has passed drop out of the card.
+  useEffect(() => {
+    const id = setInterval(() => setMinute((n) => n + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
+
   const briefingOn = Boolean(settings?.briefingEnabled);
   const briefingTime = settings?.briefingTime;
   const slotRemindersOn = Boolean(settings?.slotRemindersEnabled);
   const leadMins = settings?.slotReminderLeadMins ?? 10;
 
-  // Morning briefing: once a day, the first time the app is open after the set time.
+  // Morning briefing: becomes visible once a day, after the chosen time.
   useEffect(() => {
-    if (!briefingOn || !briefingTime || loading || !userId) return;
-    const key = `studymate-briefing-${userId}`;
-    let cancelled = false;
-
-    async function load(notify) {
-      if (busyRef.current) return;
-      busyRef.current = true;
-      try {
-        const today = todayStr();
-        const start = startOfDay(new Date());
-        const res = await api.get("/report", {
-          params: {
-            date: today,
-            from: start.toISOString(),
-            to: addDays(start, 1).toISOString(),
-          },
-        });
-        if (cancelled) return;
-
-        const nowTime = timeStr();
-        const slots = res.data.slots
-          .filter((s) => s.status === "planned" && s.end > nowTime)
-          .map((s) => {
-            const task = tasksRef.current.find((t) => t._id === s.task);
-            return {
-              id: s._id,
-              start: s.start,
-              end: s.end,
-              title: task ? task.title : "Study session",
-            };
-          });
-        const due = res.data.dueTasks.map((t) => t.title);
-        const overdue = res.data.overdueTasks.length;
-        const empty = slots.length === 0 && due.length === 0 && overdue === 0;
-
-        writeJson(key, { date: today, dismissed: empty });
-        if (empty) {
-          setCard(null);
-          return;
-        }
-
-        shownRef.current = true;
-        setCard({ date: today, slots, due, overdue });
-        if (notify) {
-          const parts = [];
-          if (slots.length) parts.push(`${slots.length} study slot(s)`);
-          if (due.length) parts.push(`${due.length} task(s) due today`);
-          if (overdue) parts.push(`${overdue} overdue`);
-          showNotification("StudyMate: today at a glance", parts.join(", "));
-        }
-      } catch {
-        // the server may still be waking up, so the next check tries again
-      } finally {
-        busyRef.current = false;
-      }
-    }
-
+    if (!briefingOn || !briefingTime || !userId) return undefined;
     function check() {
       const today = todayStr();
-      const stored = readJson(key, {});
-      if (stored.date === today) {
-        if (!stored.dismissed && !shownRef.current) load(false);
-        return;
-      }
-      shownRef.current = false;
-      setCard((prev) => (prev && prev.date !== today ? null : prev));
-      if (timeStr() >= briefingTime) load(true);
+      setBriefing((prev) => {
+        if (prev.date === today || timeStr() < briefingTime) return prev;
+        const next = { date: today, dismissed: false, notified: false };
+        writeJson(briefingKey, next);
+        return next;
+      });
     }
-
     const first = setTimeout(check, 0);
-    const timer = setInterval(check, 60000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") check();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
+    const timer = setInterval(check, 30000);
     return () => {
-      cancelled = true;
       clearTimeout(first);
       clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [briefingOn, briefingTime, loading, userId]);
+  }, [briefingOn, briefingTime, userId, briefingKey]);
+
+  // What the card shows is worked out from live data.
+  const today = todayStr();
+  const nowTime = timeStr();
+  const open = tasks.filter((t) => !t.completed);
+  const slotItems = (todaySlots || [])
+    .filter((s) => s.status === "planned" && s.end > nowTime)
+    .map((s) => ({ s, task: open.find((t) => t._id === s.task) }))
+    .filter((x) => x.task)
+    .map(({ s, task }) => ({
+      id: s._id,
+      start: s.start,
+      end: s.end,
+      title: task.title,
+    }));
+  const dueToday = open.filter((t) => t.dueDate === today);
+  const overdueCount = open.filter(
+    (t) => t.dueDate && t.dueDate < today,
+  ).length;
+  const slotCount = slotItems.length;
+  const dueCount = dueToday.length;
+  const hasContent = slotCount + dueCount + overdueCount > 0;
+  const showCard =
+    briefingOn && briefing.date === today && !briefing.dismissed && hasContent;
+
+  // One system notification per day.
+  useEffect(() => {
+    if (!showCard || todaySlots === null) return;
+    const stored = readJson(briefingKey, {});
+    if (stored.notified) return;
+    const parts = [];
+    if (slotCount) parts.push(`${slotCount} study slot(s)`);
+    if (dueCount) parts.push(`${dueCount} task(s) due today`);
+    if (overdueCount) parts.push(`${overdueCount} overdue`);
+    showNotification("StudyMate: today at a glance", parts.join(", "));
+    writeJson(briefingKey, { ...stored, notified: true });
+  }, [showCard, todaySlots, slotCount, dueCount, overdueCount, briefingKey]);
 
   // Slot reminders: shortly before a planned slot starts, never during a class.
   useEffect(() => {
-    if (!slotRemindersOn || loading || !userId) return;
-    const key = `studymate-reminded-${userId}`;
-    let cancelled = false;
-
-    async function refresh() {
-      try {
-        const res = await api.get("/slots", { params: { date: todayStr() } });
-        if (!cancelled) slotsRef.current = res.data;
-      } catch {
-        // keep the previous list
-      }
-    }
+    if (!slotRemindersOn || loading || !userId) return undefined;
 
     function tick() {
-      if (cancelled) return;
       const now = new Date();
-      const today = format(now, "yyyy-MM-dd");
+      const day = format(now, "yyyy-MM-dd");
       const nowMin = now.getHours() * 60 + now.getMinutes();
       const weekday = now.getDay();
 
@@ -199,21 +201,24 @@ function Reminders() {
       );
       if (inClass) return;
 
-      const stored = readJson(key, {});
-      const reminded = stored.date === today ? stored.ids || [] : [];
+      const stored = readJson(remindedKey, {});
+      const reminded = stored.date === day ? stored.ids || [] : [];
 
       for (const s of slotsRef.current) {
         if (
-          s.date !== today ||
+          s.date !== day ||
           s.status !== "planned" ||
           reminded.includes(s._id)
         ) {
           continue;
         }
+        const task = tasksRef.current.find(
+          (t) => t._id === s.task && !t.completed,
+        );
+        if (!task) continue;
         const startMin = toMin(s.start);
         if (startMin - leadMins <= nowMin && nowMin < startMin) {
-          const task = tasksRef.current.find((t) => t._id === s.task);
-          const text = `${task ? task.title : "Study session"} starts at ${s.start}`;
+          const text = `${task.title} starts at ${s.start}`;
           showNotification("StudyMate: study slot soon", text);
           setAlerts((prev) => [...prev, { id: s._id, text }]);
           setTimeout(
@@ -221,40 +226,30 @@ function Reminders() {
             120000,
           );
           reminded.push(s._id);
-          writeJson(key, { date: today, ids: reminded });
+          writeJson(remindedKey, { date: day, ids: reminded });
         }
       }
     }
 
-    refresh().then(tick);
-    const refreshTimer = setInterval(refresh, 120000);
-    const tickTimer = setInterval(tick, 30000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") refresh().then(tick);
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
+    const first = setTimeout(tick, 0);
+    const timer = setInterval(tick, 30000);
     return () => {
-      cancelled = true;
-      clearInterval(refreshTimer);
-      clearInterval(tickTimer);
-      document.removeEventListener("visibilitychange", onVisible);
+      clearTimeout(first);
+      clearInterval(timer);
     };
-  }, [slotRemindersOn, leadMins, loading, userId]);
+  }, [slotRemindersOn, leadMins, loading, userId, remindedKey]);
 
-  const showCard = briefingOn && card;
   if (!showCard && alerts.length === 0) return null;
 
   function dismissCard() {
-    writeJson(`studymate-briefing-${userId}`, {
-      date: card.date,
-      dismissed: true,
-    });
-    setCard(null);
+    const stored = readJson(briefingKey, {});
+    const next = { ...stored, date: today, dismissed: true };
+    writeJson(briefingKey, next);
+    setBriefing(next);
   }
 
   return (
-    <div className="mx-auto mb-4 flex max-w-2xl flex-col gap-2">
+    <div className="mx-auto mb-4 flex max-w-3xl flex-col gap-2">
       {alerts.map((a) => (
         <div
           key={a.id}
@@ -292,11 +287,13 @@ function Reminders() {
             </button>
           </div>
 
-          {card.slots.length > 0 && (
+          {slotItems.length > 0 && (
             <div className="mb-2">
-              <p className="text-xs font-medium text-indigo-800">Study slots</p>
+              <p className="text-xs font-medium text-indigo-800">
+                Study slots to go
+              </p>
               <ul className="text-sm text-indigo-900">
-                {card.slots.map((s) => (
+                {slotItems.map((s) => (
                   <li key={s.id}>
                     {s.start} - {s.end} · {s.title}
                   </li>
@@ -305,20 +302,20 @@ function Reminders() {
             </div>
           )}
 
-          {card.due.length > 0 && (
+          {dueToday.length > 0 && (
             <div className="mb-2">
               <p className="text-xs font-medium text-indigo-800">Due today</p>
               <ul className="text-sm text-indigo-900">
-                {card.due.map((title, i) => (
-                  <li key={`${title}-${i}`}>{title}</li>
+                {dueToday.map((t) => (
+                  <li key={t._id}>{t.title}</li>
                 ))}
               </ul>
             </div>
           )}
 
-          {card.overdue > 0 && (
+          {overdueCount > 0 && (
             <p className="mb-2 text-sm font-medium text-red-700">
-              {card.overdue} overdue task{card.overdue === 1 ? "" : "s"}
+              {overdueCount} overdue task{overdueCount === 1 ? "" : "s"}
             </p>
           )}
 

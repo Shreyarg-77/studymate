@@ -56,6 +56,40 @@ export function DataProvider({ children }) {
     setAttempt((n) => n + 1);
   }
 
+  // Keep tasks, subjects and classes fresh after changes made elsewhere in the app
+  // (a Pomodoro finishing, a slot completing a task) and when the tab regains focus.
+  useEffect(() => {
+    let timer = null;
+    async function refresh() {
+      try {
+        const [s, t, tt] = await Promise.all([
+          api.get("/subjects"),
+          api.get("/tasks"),
+          api.get("/timetable"),
+        ]);
+        setSubjects(s.data);
+        setTasks(t.data);
+        setTimetable(tt.data);
+      } catch {
+        // the next change or focus tries again
+      }
+    }
+    function schedule() {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 400);
+    }
+    function onVisible() {
+      if (document.visibilityState === "visible") schedule();
+    }
+    window.addEventListener("studymate-data-changed", schedule);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("studymate-data-changed", schedule);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
   /* ---------- subjects ---------- */
 
   async function addSubject({ name, type }) {

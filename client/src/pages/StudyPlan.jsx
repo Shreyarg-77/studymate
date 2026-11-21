@@ -104,6 +104,20 @@ function StudyPlan() {
   const [pickerDirty, setPickerDirty] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setRefreshKey((n) => n + 1);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("studymate-data-changed", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("studymate-data-changed", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,7 +135,7 @@ function StudyPlan() {
     return () => {
       cancelled = true;
     };
-  }, [date]);
+  }, [date, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,7 +183,7 @@ function StudyPlan() {
     );
   }
 
-  async function generate() {
+  async function generate(mode = "fill") {
     if (selected.length === 0) {
       setError("Tick at least one task to plan.");
       return;
@@ -182,6 +196,7 @@ function StudyPlan() {
         date,
         today: todayStr(),
         now: nowStr(),
+        mode,
         taskIds: selected.map((t) => t._id),
       });
       setSlots(res.data.slots);
@@ -202,10 +217,20 @@ function StudyPlan() {
     }
   }
 
+  function replanDay() {
+    const ok = window.confirm(
+      "Replan the whole day? Slots you have not finished will move to new times. Done and skipped slots stay where they are.",
+    );
+    if (ok) generate("replan");
+  }
+
   async function setStatus(slot, status) {
     setError("");
     try {
-      const res = await api.patch(`/slots/${slot._id}`, { status });
+      const res = await api.patch(`/slots/${slot._id}`, {
+        status,
+        today: todayStr(),
+      });
       const { updatedTask, progress, ...updatedSlot } = res.data;
       setSlots((prev) =>
         prev.map((s) => (s._id === slot._id ? updatedSlot : s)),
@@ -354,6 +379,7 @@ function StudyPlan() {
       selected.some((t) => new Date(t.updatedAt).getTime() > planTime));
 
   const showMissed = !isPast && missed && missed.count > 0;
+  const hasPlan = slots.length > 0;
 
   const navButton =
     "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40";
@@ -403,16 +429,25 @@ function StudyPlan() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
-          onClick={generate}
+          onClick={() => generate("fill")}
           disabled={busy || isPast || selected.length === 0}
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
         >
           {busy
             ? "Planning..."
-            : slots.some((s) => s.status === "planned")
-              ? "Regenerate plan"
+            : hasPlan
+              ? "Add new work to plan"
               : "Generate plan"}
         </button>
+        {hasPlan && !isPast && (
+          <button
+            onClick={replanDay}
+            disabled={busy}
+            className="text-sm font-medium text-slate-500 underline hover:text-slate-800 disabled:opacity-40"
+          >
+            Replan whole day
+          </button>
+        )}
         <span className="text-sm font-medium text-slate-700">
           {format(parseISO(date), "EEEE, d MMMM")}
         </span>
@@ -479,11 +514,11 @@ function StudyPlan() {
             ticked under "Choose tasks to plan".
           </p>
           <button
-            onClick={generate}
+            onClick={() => generate("fill")}
             disabled={busy || selected.length === 0}
             className="text-sm font-medium text-red-800 underline disabled:opacity-40"
           >
-            Regenerate plan now
+            Move missed work into this day
           </button>
         </div>
       )}
@@ -494,11 +529,11 @@ function StudyPlan() {
             Your classes or tasks changed after this plan was made.
           </p>
           <button
-            onClick={generate}
+            onClick={replanDay}
             disabled={busy}
             className="text-sm font-medium text-indigo-700 underline disabled:opacity-40"
           >
-            Regenerate plan
+            Replan whole day
           </button>
         </div>
       )}
@@ -729,6 +764,13 @@ function StudyPlan() {
                     >
                       {slot.status}
                     </span>
+                    {date === today &&
+                      slot.status === "planned" &&
+                      slot.end <= nowStr() && (
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-slate-600">
+                          Time passed · moves to your next plan
+                        </span>
+                      )}
                     {showFlag && overdue && (
                       <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">
                         Overdue · was due{" "}

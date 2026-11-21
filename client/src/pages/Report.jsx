@@ -68,6 +68,20 @@ function Report() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setRefreshKey((n) => n + 1);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("studymate-data-changed", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("studymate-data-changed", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,7 +100,7 @@ function Report() {
     return () => {
       cancelled = true;
     };
-  }, [date]);
+  }, [date, refreshKey]);
 
   function changeDate(next) {
     if (!next || next === date) return;

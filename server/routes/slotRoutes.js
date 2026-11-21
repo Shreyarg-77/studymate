@@ -2,11 +2,13 @@ import { Router } from "express";
 import StudySlot from "../models/StudySlot.js";
 import Task from "../models/Task.js";
 import TimetableEntry from "../models/TimetableEntry.js";
+import PomodoroSession from "../models/PomodoroSession.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import httpError from "../utils/httpError.js";
 import { validDate, addDaysToDate } from "../utils/dates.js";
 import { generateSlots } from "../services/slotScheduler.js";
 import { getSettings } from "../services/settingsService.js";
+import { getProgress, completeTask } from "../services/taskProgress.js";
 
 const router = Router();
 
@@ -14,9 +16,7 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 const MISSED_LOOKBACK_DAYS = 14;
 
-function utcToday() {
-  return new Date().toISOString().slice(0, 10);
-}
+const utcToday = () => new Date().toISOString().slice(0, 10);
 
 router.get(
   "/",
@@ -29,8 +29,6 @@ router.get(
   }),
 );
 
-// Planned slots from earlier days that were never marked done and whose work
-// has not been included in a newer plan yet.
 router.get(
   "/missed",
   asyncHandler(async (req, res) => {
@@ -71,7 +69,10 @@ router.post(
       throw httpError(400, "now must be HH:mm");
     }
 
-    // Optional: plan only these tasks. Leaving it out plans every pending task.
+    // fill: keep the day's plan as it is and only add what is missing.
+    // replan (the default): rebuild the day's unfinished slots.
+    const mode = req.body.mode === "fill" ? "fill" : "replan";
+
     let taskIds = null;
     if (req.body.taskIds !== undefined) {
       const ids = req.body.taskIds;
@@ -89,6 +90,7 @@ router.post(
     const today = todayInput || utcToday();
     if (date < today) throw httpError(400, "Choose today or a future date");
     const from = date === today && now ? now : null;
+    const rollNow = now || "00:00";
 
     const userId = req.user._id;
     const settings = await getSettings(userId);
@@ -96,36 +98,87 @@ router.post(
     const taskFilter = { user: userId, completed: false };
     if (taskIds) taskFilter._id = { $in: taskIds };
 
-    const [classes, tasks, keptSlots, committedRows] = await Promise.all([
+    const dayStatuses =
+      mode === "fill" ? ["done", "skipped", "planned"] : ["done", "skipped"];
+
+    // Planned slots that still count as covering a task: later days, and the
+    // rest of today. A slot whose time has already passed is missed work, so it
+    // is not counted and the work moves into this plan.
+    const plannedElsewhere = [
+      { status: "planned", date: { $gt: today, $ne: date } },
+    ];
+    if (date !== today) {
+      plannedElsewhere.push({
+        status: "planned",
+        date: today,
+        end: { $gt: rollNow },
+      });
+    }
+
+    const [classes, tasks, dayDocs, slotRows, focusRows] = await Promise.all([
       TimetableEntry.find({ user: userId }).lean(),
       Task.find(taskFilter).lean(),
       StudySlot.find({
         user: userId,
         date,
-        status: { $in: ["done", "skipped"] },
+        status: { $in: dayStatuses },
       }).lean(),
       StudySlot.aggregate([
         {
           $match: {
             user: userId,
-            $or: [
-              { status: "done" },
-              { status: "planned", date: { $gte: today, $ne: date } },
-            ],
+            $or: [{ status: "done" }, ...plannedElsewhere],
           },
         },
+        {
+          $group: {
+            _id: { task: "$task", status: "$status" },
+            minutes: { $sum: "$minutes" },
+          },
+        },
+      ]),
+      PomodoroSession.aggregate([
+        { $match: { user: userId, task: { $ne: null } } },
         { $group: { _id: "$task", minutes: { $sum: "$minutes" } } },
       ]),
     ]);
 
+    const done = {};
+    const elsewhere = {};
+    const focus = {};
+    const sameDay = {};
+    for (const row of slotRows) {
+      const id = String(row._id.task);
+      if (row._id.status === "done") done[id] = row.minutes;
+      else elsewhere[id] = row.minutes;
+    }
+    for (const row of focusRows) focus[String(row._id)] = row.minutes;
+    for (const s of dayDocs) {
+      if (s.status === "planned") {
+        sameDay[String(s.task)] = (sameDay[String(s.task)] || 0) + s.minutes;
+      }
+    }
+
+    // Effort counts once (done slots or focus time, whichever is larger).
     const committed = {};
-    for (const row of committedRows) committed[String(row._id)] = row.minutes;
+    const allIds = new Set([
+      ...Object.keys(done),
+      ...Object.keys(elsewhere),
+      ...Object.keys(focus),
+      ...Object.keys(sameDay),
+    ]);
+    for (const id of allIds) {
+      committed[id] =
+        Math.max(done[id] || 0, focus[id] || 0) +
+        (elsewhere[id] || 0) +
+        (sameDay[id] || 0);
+    }
 
     const result = generateSlots({
       date,
       classes,
       blocked: settings.blockedTimes,
-      keptSlots: keptSlots.map((s) => ({
+      keptSlots: dayDocs.map((s) => ({
         start: s.start,
         end: s.end,
         task: String(s.task),
@@ -137,6 +190,7 @@ router.post(
         dueDate: t.dueDate,
         estimatedMins: t.estimatedMins,
         dailyMins: t.dailyMins,
+        completed: t.completed,
       })),
       committed,
       prefs: {
@@ -149,21 +203,23 @@ router.post(
       from,
     });
 
-    // Missed work from earlier days is part of this plan, so stop warning about it.
-    // Tasks the user left out of this plan keep their warning.
+    // Missed work that is now part of a plan no longer needs a warning.
+    const rolled = [{ date: { $lt: today } }];
+    if (date > today && now) rolled.push({ date: today, end: { $lte: now } });
     await StudySlot.updateMany(
       {
         user: userId,
         status: "planned",
         handled: { $ne: true },
-        date: { $lt: today },
         task: { $in: tasks.map((t) => t._id) },
+        $or: rolled,
       },
       { handled: true },
     );
 
-    // Replace this day's unfinished plan with the new one.
-    await StudySlot.deleteMany({ user: userId, date, status: "planned" });
+    if (mode === "replan") {
+      await StudySlot.deleteMany({ user: userId, date, status: "planned" });
+    }
     if (result.slots.length > 0) {
       await StudySlot.insertMany(
         result.slots.map((s) => ({
@@ -182,6 +238,7 @@ router.post(
     });
     res.json({
       date,
+      mode,
       slots,
       unscheduled: result.unscheduled,
       freeMinutes: result.freeMinutes,
@@ -193,9 +250,12 @@ router.post(
 router.patch(
   "/:id",
   asyncHandler(async (req, res) => {
-    const { status } = req.body;
+    const { status, today: todayInput } = req.body;
     if (!["planned", "done", "skipped"].includes(status)) {
       throw httpError(400, "Status must be planned, done or skipped");
+    }
+    if (todayInput !== undefined && !validDate(todayInput)) {
+      throw httpError(400, "today must be YYYY-MM-DD");
     }
     const slot = await StudySlot.findOneAndUpdate(
       { _id: req.params.id, user: req.user._id },
@@ -211,52 +271,24 @@ router.patch(
     let progress = null;
 
     if (task) {
-      const sums = await StudySlot.aggregate([
-        {
-          $match: {
-            user: req.user._id,
-            task: task._id,
-            status: { $in: ["done", "planned"] },
-          },
-        },
-        {
-          $group: {
-            _id: "$status",
-            minutes: { $sum: "$minutes" },
-            count: { $sum: 1 },
-          },
-        },
-      ]);
-      const pick = (s) =>
-        sums.find((x) => x._id === s) || { minutes: 0, count: 0 };
-      const doneMinutes = pick("done").minutes;
-      const estimate = task.estimatedMins ?? 60;
-      progress = { doneMinutes, estimate, plannedLeft: pick("planned").count };
+      progress = await getProgress(req.user._id, task, todayInput);
 
       // Finished: nothing else is planned for it, or all of its time is done.
       if (
         status === "done" &&
         !task.completed &&
-        (progress.plannedLeft === 0 || doneMinutes >= estimate)
+        (progress.plannedLeft === 0 ||
+          progress.doneMinutes >= progress.estimate)
       ) {
-        task = await Task.findOneAndUpdate(
-          { _id: task._id, user: req.user._id },
-          { completed: true, completedAt: new Date(), autoCompleted: true },
-          { new: true },
-        ).lean();
-        await StudySlot.deleteMany({
-          user: req.user._id,
-          task: task._id,
-          status: "planned",
-        });
+        task = await completeTask(req.user._id, task);
         progress.plannedLeft = 0;
       } else if (
         status !== "done" &&
         task.completed &&
         task.autoCompleted &&
-        doneMinutes < estimate
+        progress.doneMinutes < progress.estimate
       ) {
-        // Undo: a task that finished by itself reopens. Manual completion is never undone here.
+        // Undo: a task that finished by itself reopens. Manual completion is never undone.
         task = await Task.findOneAndUpdate(
           { _id: task._id, user: req.user._id },
           { completed: false, completedAt: null, autoCompleted: false },
@@ -268,4 +300,5 @@ router.patch(
     res.json({ ...slot.toObject(), updatedTask: task || null, progress });
   }),
 );
+
 export default router;
